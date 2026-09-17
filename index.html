@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Window Illusion</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f0f0; }
+        canvas { display: block; }
+        #video-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 320px;
+            height: 240px;
+            border: 2px solid white;
+            z-index: 100;
+            background: #000;
+        }
+        video, canvas#tracker-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* mirror video */
+        }
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #333;
+            font-family: sans-serif;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+    </style>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- MediaPipe Face Detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="video-container">
+        <video id="video" width="320" height="240" preload autoplay loop muted playsinline></video>
+        <canvas id="tracker-canvas" width="320" height="240"></canvas>
+    </div>
+    <div id="info">Please allow camera access. Move your head to see the 3D parallax effect.</div>
+    
+    <script>
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.up.set(0, 0, 1);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        dirLight.position.set(2, 5, 5);
+        scene.add(dirLight);
+
+        const target = new THREE.Vector3(0.8, 0.8, 1.0);
+        const basePos = new THREE.Vector3(4.0, 4.0, 1.0);
+
+        const cubeGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const cubeMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+        const cube = new THREE.Mesh(cubeGeo, cubeMat);
+        cube.position.copy(target);
+        scene.add(cube);
+
+        const cubeEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(cubeGeo),
+            new THREE.LineBasicMaterial({ color: 0x000000 })
+        );
+        cube.add(cubeEdges);
+
+        function createCurvedScreen(angle_deg, curvature, colorStr) {
+            const width = 3.0;
+            const height = 2.0;
+            const n_width = 60;
+            const n_height = 40;
+            
+            const geo = new THREE.PlaneGeometry(width, height, n_width, n_height);
+            const pos = geo.attributes.position;
+            
+            const angle = angle_deg * Math.PI / 180;
+            const dx = Math.cos(angle);
+            const dy = Math.sin(angle);
+            const nx = -Math.sin(angle);
+            const ny = Math.cos(angle);
+            
+            for (let i = 0; i < pos.count; i++) {
+                let u = pos.getX(i) + width/2;
+                let z = pos.getY(i) + height/2;
+                let bend = curvature * Math.pow(u / width, 2);
+                let X = u * dx + bend * nx;
+                let Y = u * dy + bend * ny;
+                pos.setXYZ(i, X, Y, z);
+            }
+            geo.computeVertexNormals();
+            
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: colorStr, 
+                side: THREE.DoubleSide, 
+                transparent: true, 
+                opacity: 0.85,
+                polygonOffset: true,
+                polygonOffsetFactor: 1, 
+                polygonOffsetUnits: 1
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            const edges = new THREE.LineSegments(
+                new THREE.EdgesGeometry(geo),
+                new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.1 })
+            );
+            mesh.add(edges);
+            
+            return mesh;
+        }
+
+        const screen1 = createCurvedScreen(0, 0.5, 0xadd8e6);
+        scene.add(screen1);
+        
+        const screen2 = createCurvedScreen(90, -0.5, 0x90ee90);
+        scene.add(screen2);
+
+        const hingeMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 5 });
+        const hingeGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, 2)
+        ]);
+        const hinge = new THREE.Line(hingeGeo, hingeMat);
+        scene.add(hinge);
+
+        const gridHelper = new THREE.GridHelper(10, 10);
+        gridHelper.rotation.x = Math.PI / 2;
+        scene.add(gridHelper);
+
+        camera.position.copy(basePos);
+        camera.lookAt(target);
+
+        // --- MEDIAPIPE FACE TRACKING ---
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('tracker-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        
+        let targetCameraPos = basePos.clone();
+        let currentCameraPos = basePos.clone();
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.detections.length > 0) {
+                // Get the first detected face
+                const detection = results.detections[0];
+                const bbox = detection.boundingBox;
+                
+                // Draw bounding box
+                canvasCtx.strokeStyle = '#a64ceb';
+                canvasCtx.lineWidth = 2;
+                
+                // Fallback for different MediaPipe versions
+                const cx = bbox.xCenter !== undefined ? bbox.xCenter : (bbox.xMin + bbox.width / 2);
+                const cy = bbox.yCenter !== undefined ? bbox.yCenter : (bbox.yMin + bbox.height / 2);
+                
+                if (isNaN(cx) || isNaN(cy)) return; // Prevent NaN from breaking the 3D camera
+
+                const rectX = (cx - bbox.width/2) * canvasElement.width;
+                const rectY = (cy - bbox.height/2) * canvasElement.height;
+                const rectW = bbox.width * canvasElement.width;
+                const rectH = bbox.height * canvasElement.height;
+                canvasCtx.strokeRect(rectX, rectY, rectW, rectH);
+                
+                // Map to nx, ny (-1 to 1)
+                const nx = (cx - 0.5) * 2.0;
+                const ny = (cy - 0.5) * 2.0;
+
+                const depth = 0.5;
+                const person_x = -nx * 0.57;
+                const person_y = -ny * 0.43;
+
+                const azimuth_change = Math.atan2(person_x, depth);
+                const elevation_change = Math.atan2(person_y, depth);
+
+                const view_dir = new THREE.Vector3().subVectors(basePos, target);
+                const r = view_dir.length();
+                
+                const orig_azimuth = Math.atan2(view_dir.y, view_dir.x);
+                let z_ratio = view_dir.z / r;
+                z_ratio = Math.max(-1, Math.min(1, z_ratio));
+                const orig_elevation = Math.asin(z_ratio);
+
+                const new_az = orig_azimuth + azimuth_change;
+                let new_el = orig_elevation + elevation_change;
+                new_el = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, new_el));
+
+                const new_vx = r * Math.cos(new_el) * Math.cos(new_az);
+                const new_vy = r * Math.cos(new_el) * Math.sin(new_az);
+                const new_vz = r * Math.sin(new_el);
+
+                targetCameraPos.set(
+                    target.x + new_vx,
+                    target.y + new_vy,
+                    target.z + new_vz
+                );
+            }
+            canvasCtx.restore();
+        }
+
+        const faceDetection = new FaceDetection({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+        }});
+        
+        faceDetection.setOptions({
+            model: 'short', // very fast, for faces within 2 meters
+            minDetectionConfidence: 0.5
+        });
+        
+        faceDetection.onResults(onResults);
+
+        const mpCamera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceDetection.send({image: videoElement});
+            },
+            width: 320,
+            height: 240
+        });
+        mpCamera.start();
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            currentCameraPos.lerp(targetCameraPos, 0.5);
+            camera.position.copy(currentCameraPos);
+            camera.lookAt(target);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
