@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Corner Window · 90° Concave</title>
+  <link rel="stylesheet" href="concave.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+  <script defer src="concave-geometry.js"></script>
+  <script defer src="concave-tracking.js"></script>
+  <script defer src="concave-props.js"></script>
+  <script defer src="concave.js"></script>
+</head>
+<body>
+  <main id="stage" aria-label="3D scene projected onto two inward-facing monitors"></main>
+  <div id="seam-marker" aria-hidden="true"></div>
+  <div class="screen-label left">LEFT SCREEN</div><div class="screen-label right">RIGHT SCREEN</div>
+  <details id="controls" open>
+    <summary>Corner Window <span>90° CONCAVE</span></summary>
+    <p class="intro">A dancer surrounded by plants, furniture and playful props. Sit centered, facing the seam.</p>
+    <button id="hide-setup">Hide setup · H</button>
+    <button id="toggle-dance">Pause dance</button>
+    <svg id="diagram" viewBox="0 0 260 112" role="img" aria-label="Top view: two screens form a 90 degree inside corner, with the viewer between them">
+      <path d="M55 91 L130 16 L205 91" fill="none" stroke="#76ddcd" stroke-width="5" stroke-linecap="round"/>
+      <path d="M118 28 L130 40 L142 28" fill="none" stroke="#769599"/>
+      <path id="sightline" d="M130 82 L130 16" stroke="#769599" stroke-dasharray="3 4"/>
+      <rect x="87" y="47" width="11" height="11" rx="2" fill="#9caaff"/>
+      <text x="12" y="68">CAMERA</text>
+      <circle id="eye-dot" cx="130" cy="82" r="6" fill="#ffbc70"/>
+      <circle id="object-position" cx="130" cy="33.4" r="4" fill="#ffad52"/>
+      <text x="13" y="33">TOP VIEW</text><text x="148" y="64">90°</text><text x="142" y="101">YOU</text>
+    </svg>
+    <label for="object-forward">Person forward of seam <output id="object-forward-value">12 cm</output></label>
+    <input id="object-forward" type="range" min="6" max="16" step="1" value="12">
+    <label class="check"><input id="screen-guides" type="checkbox" checked> Show screen-plane outlines</label>
+    <p class="hint">Higher values bring the person closer to you. Move your head sideways to look around the figure.</p>
+    <label for="seam">Physical seam alignment <output id="seam-value">50%</output></label>
+    <input id="seam" type="range" min="20" max="80" step="0.1" value="50">
+    <p class="hint">Stretch this window edge-to-edge across both monitors. Align the divider with their physical seam, then press H to hide setup. Each half must fill its matching screen.</p>
+    <label for="distance">Calibration: eyes → seam <output id="distance-value">45 cm</output></label>
+    <input id="distance" type="range" min="30" max="60" step="1" value="45">
+    <div class="presets"><button data-distance="30">30 cm</button><button data-distance="45">45 cm</button><button data-distance="60">60 cm</button></div>
+    <div class="dimensions">
+      <label>Screen width (cm)<input id="screen-width" type="number" min="20" max="120" step="0.1" value="53.1"></label>
+      <label>Screen height (cm)<input id="screen-height" type="number" min="15" max="80" step="0.1" value="29.9"></label>
+    </div>
+    <p class="hint">Enter the visible dimensions of each matching monitor. Keep inner edges touching and screen centers at eye level.</p>
+    <p class="hint">Camera at the center of the left screen, lens facing straight out from that screen. Camera tracking starts automatically.</p>
+    <div class="actions"><button id="calibrate" disabled>Calibrate depth</button><button id="restart-camera">Restart camera</button></div>
+    <p id="status" role="status">Starting camera tracking…</p>
+    <div class="telemetry" aria-label="Live tracking measurements">
+      <div>Seam depth <output id="live-depth">—</output></div>
+      <div>Camera range <output id="camera-range">—</output></div>
+      <div>Tracking rate <output id="tracking-rate">—</output></div>
+      <div>Last measurement <output id="tracking-age">—</output></div>
+    </div>
+    <div id="video-container" hidden><video id="video" autoplay muted playsinline></video><canvas id="tracking-overlay" aria-label="Tracked iris positions"></canvas></div>
+    <details class="setup"><summary>Camera placement</summary>
+      <label>Camera height above screen center (cm)<input id="camera-height" type="number" min="-40" max="60" step="0.1" value="0"></label>
+      <label>Camera horizontal field of view (°)<input id="camera-fov" type="number" min="30" max="120" step="1" value="60"></label>
+      <p>For a top-center webcam, enter half the screen height plus its height above the visible screen. Use the webcam's horizontal field of view for the active video mode if known. Default: 60°. Recalibrate after changes.</p>
+    </details>
+    <details class="setup"><summary>Separate windows (optional)</summary>
+      <p>Open one view per monitor, move each window to its matching screen, then use its Fullscreen button. Keep this controller running. Tracking uses the webcam on the left monitor.</p>
+      <div class="actions"><button id="open-left">Open left</button><button id="open-right">Open right</button></div>
+      <p>Allow camera access. Sit centered at your measured eye-to-seam distance, look toward the seam, hold still, then press Calibrate depth. Iris size estimates depth continuously as you move. Keep both eyes visible in the camera preview.</p>
+    </details>
+    <a class="original" href="index.html">Original demo ↗</a>
+  </details>
+  <div id="presentation-tools" hidden><button id="show-setup">Setup · H</button></div>
+  <div id="display-tools" hidden><span id="display-title"></span><button id="fullscreen">Fullscreen</button><span id="connection" role="status">Waiting for controller…</span></div>
+  <div id="footer">PLACEHOLDER PERSON <span>Spanning view · align the divider with the physical seam · H hides setup</span></div>
+</body>
+</html>
