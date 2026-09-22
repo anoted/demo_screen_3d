@@ -24,5 +24,31 @@
     ['x','y','z'].forEach((key,i) => { eye[key] = pose[key]+axes.forward[i]*depth+axes.right[i]*horizontal+axes.up[i]*vertical; });
     return Object.values(eye).every(Number.isFinite) ? eye : null;
   }
-  root.PortraitTracking = { basis, estimate };
+  function eyeFromSample(sample, pose, range) {
+    if (!sample || ![sample.x,sample.y,sample.aspect,pose.x,pose.y,pose.z,pose.yaw,pose.tilt,pose.fov,range].every(Number.isFinite)
+      || range <= 0 || sample.aspect <= 0 || pose.fov <= 0 || pose.fov >= 180) return null;
+    const axes = basis(pose), focal = 1/(2*Math.tan(pose.fov*Math.PI/360));
+    const horizontal = (sample.x-.5)/focal, vertical = (.5-sample.y)/(focal*sample.aspect);
+    const scale = range/Math.hypot(horizontal,vertical,1), eye = {};
+    ['x','y','z'].forEach((key,i) => { eye[key] = pose[key]+scale*(axes.forward[i]+horizontal*axes.right[i]+vertical*axes.up[i]); });
+    return eye;
+  }
+  function validEye(eye) {
+    // Both inward-facing panel half-spaces: z+x > 0 and z-x > 0.
+    return eye && [eye.x,eye.y,eye.z].every(Number.isFinite)
+      && Math.max(Math.abs(eye.x),Math.abs(eye.y),Math.abs(eye.z)) < 10
+      && eye.z-Math.abs(eye.x) >= .03;
+  }
+  function smoothEye(current, target, seconds) {
+    // 180 ms response, independent of inference/render rate. Ignore sub-2 mm noise.
+    const alpha = 1-Math.exp(-Math.max(0, Math.min(seconds,.1))/.18);
+    const next = {};
+    for (const axis of ['x','y','z']) {
+      const delta = target[axis]-current[axis];
+      const filtered = Math.sign(delta)*Math.max(0,Math.abs(delta)-.002);
+      next[axis] = current[axis]+filtered*alpha;
+    }
+    return next;
+  }
+  root.PortraitTracking = { basis, estimate, eyeFromSample, validEye, smoothEye };
 })(typeof window === 'undefined' ? globalThis : window);

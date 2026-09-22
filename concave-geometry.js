@@ -21,7 +21,7 @@
     return { z, size };
   }
   // Off-axis projection keeps each physical panel fixed while the eye translates.
-  function project(THREE, camera, screen, eye) {
+  function project(THREE, camera, screen, eye, seamOverlap = 0) {
     const pa = new THREE.Vector3(...screen.pa), pb = new THREE.Vector3(...screen.pb), pc = new THREE.Vector3(...screen.pc);
     const right = pb.clone().sub(pa).normalize();
     const up = pc.clone().sub(pa).normalize();
@@ -34,6 +34,9 @@
     camera.updateMatrixWorld(true);
     camera.projectionMatrix.makePerspective(right.dot(va)*near/distance, right.dot(vb)*near/distance,
       up.dot(vc)*near/distance, up.dot(va)*near/distance, near, far);
+    // Positive overlap pans each panel toward the seam, exposing shared content.
+    // Offset only the horizontal center: scale, vertical alignment, and eye stay fixed.
+    camera.projectionMatrix.elements[8] += (screen.name === 'left' ? 2 : -2)*seamOverlap;
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
   }
   root.ConcaveGeometry = { screens, clampEye, foreground, project };

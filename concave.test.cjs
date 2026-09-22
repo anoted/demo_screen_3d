@@ -19,6 +19,20 @@ async function run() {
   const { THREE: T, ConcaveGeometry: geometry } = context;
   const tracking = context.ConcaveTracking;
   const close = (a, b, label) => assert.ok(Math.abs(a-b) < 1e-9, `${label}: ${a} != ${b}`);
+  for (const screen of geometry.screens(.6,1.067)) {
+    const camera = new T.PerspectiveCamera(), eye = new T.Vector3(0,0,1.2);
+    geometry.project(T,camera,screen,eye);
+    const base = new T.Vector3(0,0,-.2).project(camera), scale = camera.projectionMatrix.elements[0];
+    for (const overlap of [-.2,-.05,0,.05,.2]) {
+      geometry.project(T,camera,screen,eye,overlap);
+      const shifted = new T.Vector3(0,0,-.2).project(camera);
+      close(shifted.x-base.x, (screen.name === 'left' ? -2 : 2)*overlap, 'Signed seam overlap');
+      close(shifted.y,base.y,'Overlap preserves vertical alignment');
+      close(camera.projectionMatrix.elements[0],scale,'Overlap preserves model scale');
+      const inverse = shifted.clone().unproject(camera);
+      close(inverse.z,-.2,'Overlap inverse projection');
+    }
+  }
   let count = 0;
   for (const width of [.2, .531, 1.2]) for (const height of [.15, .299, .8]) {
     const screens = geometry.screens(width, height);

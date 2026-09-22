@@ -3,12 +3,12 @@
   const $ = id => document.getElementById(id);
   const side = new URLSearchParams(location.search).get('view');
   const isDisplay = ['left', 'right'].includes(side);
-  const state = { width: .60, height: 1.067, depth: 0,
+  const state = { width: .60, height: 1.067, depth: .08, overlap: 0,
     eye: { x: 0, y: 0, z: 1.20 }, dancePlaying: true, danceEpoch: Date.now(), danceOffset: 0 };
   let seam = .5, channel, lastMessage = 0;
   const status = message => { $('status').textContent = message; };
   if (isDisplay) {
-    document.body.classList.add('display'); $('display-tools').hidden = false;
+    document.body.classList.add('display', 'display-'+side); $('display-tools').hidden = false;
     $('display-title').textContent = `${side.toUpperCase()} SCREEN`;
   }
   if (!window.THREE) { status('3D library could not load. Check your connection and reload.'); $('connection').textContent = '3D library unavailable'; return; }
@@ -19,32 +19,103 @@
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setScissorTest(true); $('stage').appendChild(renderer.domElement);
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x111d29);
-  scene.add(new THREE.HemisphereLight(0xe1efff, 0x554130, .8));
-  const light = new THREE.DirectionalLight(0xffe5bf, 1.25);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
+  scene.add(new THREE.HemisphereLight(0xe1efff, 0x30314a, .45));
+  const light = new THREE.DirectionalLight(0xffead5, 1.1);
   light.position.set(-.5, 1.6, 1.4); light.castShadow = true;
   light.shadow.mapSize.set(2048, 2048);
   Object.assign(light.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2, near: .01, far: 8 });
   light.shadow.camera.updateProjectionMatrix(); light.shadow.bias = -.0002; scene.add(light);
-  const rim = new THREE.DirectionalLight(0x80bfff, .65); rim.position.set(1, .5, -1); scene.add(rim);
+  const rim = new THREE.DirectionalLight(0x80bfff, .25); rim.position.set(1, .5, -1); scene.add(rim);
   const cameras = [new THREE.PerspectiveCamera(), new THREE.PerspectiveCamera()];
-  const architecture = new THREE.Group(); scene.add(architecture);
-  const material = color => new THREE.MeshStandardMaterial({ color, roughness: .8 });
-  const plaster = material(0x284452), frameMat = material(0xd2ba91), trimMat = material(0x86694c);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), material(0x425260));
-  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
-  function box(parent, name, size, position, mat) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
-    mesh.name = name; mesh.position.set(...position); mesh.castShadow = true; mesh.receiveShadow = true;
-    parent.add(mesh); return mesh;
+  // The shared room/frame uses reduced lateral/vertical parallax. The panda
+  // retains the full tracked viewpoint response, making it feel closer.
+  const room = new THREE.Group(); room.name = 'shared-room'; scene.add(room);
+  const roomViewResponse = .25;
+  function updateRoomViewResponse() {
+    // Follow 75% of lateral/vertical eye translation, leaving the room with
+    // 25% of the relative viewpoint change. Keep depth, scale, and panda fixed.
+    // Moving the complete enclosure and frame together avoids broken junctions.
+    room.position.set(state.eye.x*(1-roomViewResponse), state.eye.y*(1-roomViewResponse), 0);
   }
-  // A solid, upright mannequin provides a human silhouette from every viewpoint.
+  const roomMaterials = {
+    back: new THREE.MeshStandardMaterial({color: 0x536986, roughness: .95}),
+    left: new THREE.MeshStandardMaterial({color: 0x387d85, roughness: .95}),
+    right: new THREE.MeshStandardMaterial({color: 0x77618d, roughness: .95}),
+    floor: new THREE.MeshStandardMaterial({color: 0x696d88, roughness: .88}),
+    frame: new THREE.MeshBasicMaterial({color: 0x030405}),
+    edge: new THREE.MeshBasicMaterial({color: 0x303c49}),
+    trim: new THREE.MeshStandardMaterial({color: 0x9cb9cb, roughness: .8})
+  };
+  function roomBox(name, size, position, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.name = name; mesh.position.set(...position); mesh.receiveShadow = true;
+    room.add(mesh); return mesh;
+  }
+  let roomLayout = '';
+  function updateRoom() {
+    const key = `${state.width}/${state.height}`;
+    if (key === roomLayout) return;
+    roomLayout = key;
+    for (const child of [...room.children]) { child.geometry.dispose(); room.remove(child); }
+    const w = state.width, h = state.height;
+    const apertureX = w*.80, apertureY = h*.46;
+    const frameZ = .025, thickness = .025;
+    const halfWidth = w*1.2, back = -Math.max(w*2, .65), front = frameZ-thickness/2;
+    // The floor meets the sill at its back edge, without an exposed slab or
+    // a coplanar overlap between the floor and the top of the frame.
+    const floorY = -apertureY, ceiling = h*.85, depth = front-back;
+    roomBox('room-back-wall', [halfWidth*2, ceiling-floorY, .025], [0,(ceiling+floorY)/2,back-.0125], roomMaterials.back);
+    roomBox('room-left-wall', [.025,ceiling-floorY,depth], [-halfWidth-.0125,(ceiling+floorY)/2,(front+back)/2], roomMaterials.left);
+    roomBox('room-right-wall', [.025,ceiling-floorY,depth], [halfWidth+.0125,(ceiling+floorY)/2,(front+back)/2], roomMaterials.right);
+    roomBox('room-ceiling', [halfWidth*2,.025,depth], [0,ceiling+.0125,(front+back)/2], roomMaterials.back);
+    roomBox('room-floor', [halfWidth*2,.025,depth], [0,floorY-.0125,(front+back)/2], roomMaterials.floor);
+    // Fine floor seams converge in depth without dividing the monitor hinge.
+    for (const x of [-.66,-.33,.33,.66]) {
+      roomBox('floor-seam', [.0015,.001,depth], [x*halfWidth,floorY+.0005,(front+back)/2], roomMaterials.trim);
+    }
+    for (let i=1;i<=5;i++) {
+      roomBox('floor-seam', [halfWidth*2,.001,.0015], [0,floorY+.0005,back+i*depth/6], roomMaterials.trim);
+    }
+    roomBox('back-skirting', [halfWidth*2,h*.012,.006], [0,floorY+h*.006,back+.003], roomMaterials.trim);
+    for (const sign of [-1,1]) roomBox('side-skirting', [.006,h*.012,depth], [sign*(halfWidth-.003),floorY+h*.006,(front+back)/2], roomMaterials.trim);
+    // A single planar aperture spans the hinge. The two screen images of its
+    // horizontal edges are deliberately warped: they form straight world-space
+    // edges when seen on the physical 90-degree panels from the calibrated eye.
+    const outside = Math.max(w,h)*4;
+    for (const sign of [-1,1]) {
+      roomBox('portal-side', [outside, outside*2, thickness], [sign*(apertureX+outside/2),0,frameZ], roomMaterials.frame);
+      roomBox('portal-horizontal', [apertureX*2, outside, thickness], [0,sign*(apertureY+outside/2),frameZ], roomMaterials.frame);
+
+    }
+    // One flat trim ring replaces the overlapping trim boxes. Its face sits
+    // clearly ahead of the black frame, with no shared depth-buffer surfaces.
+    const rimWidth = .006, shape = new THREE.Shape();
+    shape.moveTo(-apertureX-rimWidth,-apertureY-rimWidth);
+    shape.lineTo(apertureX+rimWidth,-apertureY-rimWidth);
+    shape.lineTo(apertureX+rimWidth,apertureY+rimWidth);
+    shape.lineTo(-apertureX-rimWidth,apertureY+rimWidth); shape.closePath();
+    const hole = new THREE.Path();
+    hole.moveTo(-apertureX,-apertureY); hole.lineTo(-apertureX,apertureY);
+    hole.lineTo(apertureX,apertureY); hole.lineTo(apertureX,-apertureY); hole.closePath();
+    shape.holes.push(hole);
+    const frameTrim = new THREE.Mesh(new THREE.ShapeGeometry(shape),roomMaterials.edge);
+    frameTrim.name = 'portal-trim'; frameTrim.position.z = frameZ+thickness/2+.001;
+    room.add(frameTrim);
+    // Light comes from the viewer side, above and slightly left of the screens.
+    light.position.set(-w*.65,h*.65,w*1.8);
+    light.target.position.set(0,-h*.12,-w*.45); scene.add(light.target);
+    const reach = Math.max(w*2,h*1.5);
+    Object.assign(light.shadow.camera, {left:-reach,right:reach,top:reach,bottom:-reach,near:.01,far:reach*5});
+    light.shadow.camera.updateProjectionMatrix(); light.shadow.normalBias = .001;
+  }
+  // A rounded black-and-white panda, with real geometry for parallax and shadows.
   const person = new THREE.Group();
-  person.name = 'foreground-object'; person.userData.kind = 'placeholder-person';
+  person.name = 'foreground-object'; person.userData.kind = 'panda';
   scene.add(person);
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xf2bb78, roughness: .48, metalness: .06 });
-  const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x8f6550, roughness: .6 });
-  const faceMaterial = new THREE.MeshStandardMaterial({ color: 0x263b46, roughness: .7 });
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xf5f2e9, roughness: .8, metalness: .06 });
+  const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x151923, roughness: .85 });
+  const faceMaterial = new THREE.MeshStandardMaterial({ color: 0x090d14, roughness: .7 });
   const roundGeometry = new THREE.SphereGeometry(1, 24, 16);
   function roundedPart(name, position, scale, material = bodyMaterial) {
     const part = new THREE.Mesh(roundGeometry, material);
@@ -52,33 +123,41 @@
     part.castShadow = true; part.receiveShadow = true; person.add(part);
     return part;
   }
-  function limb(name, start, end, radius, material = bodyMaterial) {
+  function limb(name, start, end, radius, material = jointMaterial) {
     const a = new THREE.Vector3(...start), b = new THREE.Vector3(...end);
-    const part = new THREE.Mesh(new THREE.CylinderGeometry(radius*.85, radius, a.distanceTo(b), 20), material);
+    const part = new THREE.Mesh(new THREE.CylinderGeometry(radius*1.3, radius*1.5, a.distanceTo(b), 20), material);
     part.name = name; part.position.copy(a).add(b).multiplyScalar(.5);
     part.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), b.sub(a).normalize());
     part.castShadow = true; part.receiveShadow = true; person.add(part);
   }
-  roundedPart('head', [0,.67,0], [.15,.20,.145]);
+  roundedPart('head', [0,.67,0], [.27,.255,.23]);
   limb('neck', [0,.41,0], [0,.52,0], .065, jointMaterial);
-  roundedPart('torso', [0,.20,0], [.26,.28,.14]);
-  roundedPart('pelvis', [0,-.14,0], [.21,.14,.13]);
+  roundedPart('torso', [0,.17,0], [.32,.34,.23]);
+  roundedPart('pelvis', [0,-.14,0], [.25,.18,.20]);
   // Small facial landmarks distinguish the front from the back during parallax.
-  roundedPart('nose', [0,.65,.142], [.025,.033,.035]);
+  roundedPart('muzzle', [0,.60,.205], [.115,.08,.065]);
+  roundedPart('nose', [0,.635,.268], [.045,.028,.023], faceMaterial);
+  roundedPart('mouth', [0,.572,.263], [.032,.009,.008], faceMaterial);
+  const pandaFace = ['muzzle','mouth'];
   for (const sign of [-1,1]) {
     const sideName = sign < 0 ? 'left' : 'right';
-    roundedPart(`${sideName}-eye`, [sign*.055,.71,.132], [.013,.015,.012], faceMaterial);
+    const patch = roundedPart(`${sideName}-patch`, [sign*.102,.70,.207], [.076,.093,.033], jointMaterial);
+    patch.rotation.z = -sign*.32;
+    roundedPart(`${sideName}-ear`, [sign*.21,.86,-.005], [.10,.105,.065], jointMaterial);
+    roundedPart(`${sideName}-eye`, [sign*.10,.715,.239], [.025,.029,.017], faceMaterial);
+    roundedPart(`${sideName}-glint`, [sign*.10-.007,.726,.254], [.008,.009,.006]);
+    pandaFace.push(`${sideName}-patch`, `${sideName}-ear`, `${sideName}-glint`);
     const shoulder = [sign*.255,.36,0], elbow = [sign*.34,.06,.01], wrist = [sign*.365,-.20,.045];
-    roundedPart(`${sideName}-shoulder`, shoulder, [.085,.09,.085]);
+    roundedPart(`${sideName}-shoulder`, shoulder, [.105,.115,.105], jointMaterial);
     limb(`${sideName}-upper-arm`, shoulder, elbow, .065);
     roundedPart(`${sideName}-elbow`, elbow, [.055,.055,.055], jointMaterial);
     limb(`${sideName}-forearm`, elbow, wrist, .052);
-    roundedPart(`${sideName}-hand`, [sign*.37,-.255,.045], [.049,.075,.04]);
+    roundedPart(`${sideName}-hand`, [sign*.37,-.255,.045], [.075,.09,.07], jointMaterial);
     const hip = [sign*.115,-.21,0], knee = [sign*.135,-.49,.015], ankle = [sign*.14,-.77,0];
     limb(`${sideName}-thigh`, hip, knee, .088);
     roundedPart(`${sideName}-knee`, knee, [.069,.067,.067], jointMaterial);
     limb(`${sideName}-shin`, knee, ankle, .065);
-    roundedPart(`${sideName}-foot`, [sign*.14,-.825,.055], [.078,.052,.13]);
+    roundedPart(`${sideName}-foot`, [sign*.14,-.825,.055], [.105,.075,.15], jointMaterial);
   }
   // Reparent the existing meshes around anatomical pivots while preserving the
   // neutral pose. All motion stays inside the foreground model's local bounds.
@@ -91,8 +170,8 @@
     for (const part of parts) pivot.attach(person.getObjectByName(part));
     return pivot;
   }
-  const torsoPivot = joint('torso-pivot', dancer, [0,-.14,0], ['torso','neck','head','nose','left-eye','right-eye']);
-  const headPivot = joint('head-pivot', torsoPivot, [0,.63,0], ['head','nose','left-eye','right-eye']);
+  const torsoPivot = joint('torso-pivot', dancer, [0,-.14,0], ['torso','neck','head','nose','left-eye','right-eye',...pandaFace]);
+  const headPivot = joint('head-pivot', torsoPivot, [0,.63,0], ['head','nose','left-eye','right-eye',...pandaFace]);
   const danceJoints = [-1,1].map(sign => {
     const name = sign < 0 ? 'left' : 'right';
     const shoulder = joint(`${name}-shoulder-pivot`, torsoPivot, [sign*.255,.5,0],
@@ -105,95 +184,62 @@
       ['knee','shin','foot'].map(part => `${name}-${part}`));
     return {sign,shoulder,elbow,hip,knee};
   });
-  const feet = ['left-foot','right-foot'].map(name => person.getObjectByName(name));
-  function groundPerson() {
-    person.updateMatrixWorld(true);
-    let soleY = Infinity;
-    for (const foot of feet) {
-      // Use the rendered sole vertices so rotated feet neither hover nor sink.
-      const positions = foot.geometry.attributes.position, matrix = foot.matrixWorld.elements;
-      for (let i=0; i<positions.count; i++) {
-        const y = matrix[1]*positions.getX(i) + matrix[5]*positions.getY(i) + matrix[9]*positions.getZ(i) + matrix[13];
-        soleY = Math.min(soleY, y);
-      }
+  // Seated bear pose: spread thighs forward, bend the knees slightly, and
+  // rest the left paw by the lap. These joints remain fixed during the wave.
+  dancer.position.y = -.25;
+  for (const {sign,hip,knee,shoulder,elbow} of danceJoints) {
+    hip.rotation.set(-1.48, 0, sign*.25);
+    knee.rotation.x = .28;
+    if (sign < 0) {
+      shoulder.rotation.set(-.45, 0, -.12);
+      elbow.rotation.x = -.65;
     }
-    person.position.y += floor.position.y-soleY;
   }
   function danceTime() {
     return state.danceOffset + (state.dancePlaying ? Math.max(0, Date.now()-state.danceEpoch)/1000 : 0);
   }
   function animateDance() {
-    // Four-second repeating groove. Time is shared across both display windows.
-    const beat = danceTime()*Math.PI;
-    const sway = Math.sin(beat);
-    dancer.position.set(.05*sway, 0, 0);
-    torsoPivot.rotation.set(0, .12*sway, -.055*sway);
-    headPivot.rotation.set(.07*Math.sin(beat*2), -.08*sway, .035*sway);
-    for (const {sign,shoulder,elbow,hip,knee} of danceJoints) {
-      const step = Math.sin(beat + (sign < 0 ? Math.PI : 0));
-      shoulder.rotation.set(.38*step, 0, sign*(.32+.22*Math.sin(beat/2)));
-      elbow.rotation.x = -.38-.22*Math.cos(beat + sign*.6);
-      hip.rotation.set(.20*step, 0, sign*.055*(1-step));
-      knee.rotation.x = .22*Math.max(0,-step);
-    }
-    const t = danceTime()*.48;
-    // Circle the two pillars: alternating occlusion makes depth easy to read.
-    person.position.x = Math.sin(t)*state.width*.31;
-    person.position.z = Math.cos(t*2)*state.width*.30 + state.depth;
-    person.rotation.y = .3*Math.sin(t);
-    groundPerson();
+    // Only the right arm gestures. The root, head, torso and legs stay still.
+    const wave = Math.sin(danceTime()*2.4);
+    const arm = danceJoints.find(joint => joint.sign === 1);
+    arm.shoulder.rotation.set(0, 0, .55);
+    arm.elbow.rotation.set(-1.5, 0, .18*wave);
+    person.position.set(0, 0, state.depth);
+    person.scale.setScalar(Math.min(state.height*.31, state.width*.48));
   }
 
-  let layoutKey = '';
-  function updateLayout() {
-    const key = `${state.width}/${state.height}`;
-    if (key === layoutKey) return;
-    layoutKey = key;
-    for (const child of [...architecture.children]) {
-      child.traverse(node => { if (node.geometry) node.geometry.dispose(); }); architecture.remove(child);
+  function updateSetupDiagram() {
+    if (isDisplay) return;
+    const pose = webcamPose(), eye = state.eye;
+    const fresh = trackingSession && lastSeen && performance.now()-lastSeen < 500;
+    $('camera-distance').value = fresh && trackingTarget ? `${(Math.hypot(eye.x-pose.x,eye.y-pose.y,eye.z-pose.z)*100).toFixed(1)} cm` : '—';
+    $('distance-label').textContent = trackingReference ? 'Estimated eyes → webcam' : 'Preview eyes → webcam';
+    const screens = ConcaveGeometry.screens(state.width, state.height);
+    // Two orthographic diagrams: x/z from above and z/y from the side.
+    const spanX = Math.max(state.width, Math.abs(pose.x), Math.abs(eye.x), .5)*2.5;
+    const minZ = Math.min(-.15, pose.z-.1), maxZ = Math.max(eye.z+.25, state.width, pose.z+.5);
+    const minY = Math.min(-state.height/2, pose.y-.15, eye.y-.15);
+    const maxY = Math.max(state.height/2+.15, pose.y+.15, eye.y+.15);
+    const top = (x,z) => [140+x/spanX*230, 30+(z-minZ)/(maxZ-minZ)*135];
+    const sidePoint = (z,y) => [25+(z-minZ)/(maxZ-minZ)*230, 345-(y-minY)/(maxY-minY)*135];
+    const points = list => list.map(p => p.join(',')).join(' ');
+    const set = (id, attrs) => { for (const [key,value] of Object.entries(attrs)) $(id).setAttribute(key,value); };
+    set('plan-panels', {points: points([top(screens[0].pa[0],screens[0].pa[2]),top(0,0),top(screens[1].pb[0],screens[1].pb[2])])});
+    set('side-panel', {x1:sidePoint(0,0)[0], x2:sidePoint(0,0)[0], y1:sidePoint(0,state.height/2)[1], y2:sidePoint(0,-state.height/2)[1]});
+    const direction = PortraitTracking.basis(pose).forward;
+    for (const [prefix,project] of [['plan',(v)=>top(v.x,v.z)],['side',(v)=>sidePoint(v.z,v.y)]]) {
+      const c=project(pose), e=project(eye), target=project({x:pose.x+direction[0]*.35,y:pose.y+direction[1]*.35,z:pose.z+direction[2]*.35});
+      set(prefix+'-camera',{cx:c[0],cy:c[1]}); set(prefix+'-eye',{cx:e[0],cy:e[1]});
+      set(prefix+'-aim',{x1:c[0],y1:c[1],x2:target[0],y2:target[1]});
+      set(prefix+'-sight',{x1:e[0],y1:e[1],x2:project({x:0,y:0,z:0})[0],y2:project({x:0,y:0,z:0})[1]});
     }
-    const w = state.width, h = state.height;
-    floor.position.y = -h*.43;
-    person.scale.setScalar(Math.min(h*.30, w*.40));
-    // All architecture is in world coordinates, shared by the two projections.
-    // Frame front faces lie exactly on each physical screen plane.
-    for (const screen of ConcaveGeometry.screens(w, h)) {
-      const a = new THREE.Vector3(...screen.pa), b = new THREE.Vector3(...screen.pb);
-      const right = b.clone().sub(a).normalize(), up = new THREE.Vector3(0, 1, 0);
-      const normal = new THREE.Vector3().crossVectors(right, up);
-      const portal = new THREE.Group(); portal.position.copy(a).addScaledVector(right, w/2); portal.position.y = 0;
-      portal.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal));
-      architecture.add(portal);
-      const border = w*.065, thickness = w*.10;
-      for (const sign of [-1, 1]) {
-        box(portal, 'window-jamb', [border, h, thickness], [sign*(w-border)/2, 0, -thickness/2], frameMat);
-        box(portal, 'window-sill', [w, h*.045, thickness], [0, sign*h*.4775, -thickness/2], frameMat);
-      }
-    }
-    const back = -w*1.4, roomWidth = w*2.8, roomHeight = h*1.8;
-    box(architecture, 'back-wall', [roomWidth, roomHeight, .04], [0, floor.position.y+roomHeight/2, back], plaster);
-    for (const sign of [-1, 1]) {
-      box(architecture, 'side-wall', [.04, roomHeight, w*2.1], [sign*roomWidth/2, floor.position.y+roomHeight/2, back+w*1.05], plaster);
-      box(architecture, 'occlusion-pillar', [w*.07, h*.86, w*.09], [sign*w*.22, 0, 0], frameMat);
-      box(architecture, 'pillar-foot', [w*.12, h*.035, w*.15], [sign*w*.22, floor.position.y+h*.0175, 0], trimMat);
-    }
-    // Nested wall panels and floor joints supply scale and converging depth cues.
-    for (let i=-3; i<=3; i++) {
-      box(architecture, 'wall-batten', [w*.015, h*1.05, .03], [i*w*.36, floor.position.y+h*.525, back+.03], trimMat);
-    }
-    for (let i=0; i<9; i++) {
-      box(architecture, 'floor-joint', [roomWidth, .002, .003], [0, floor.position.y+.002, back+i*w*.22], trimMat);
-    }
-    for (let i=-6; i<=6; i++) {
-      box(architecture, 'floor-joint', [.003, .002, w*2], [i*w*.22, floor.position.y+.002, back+w], trimMat);
-    }
-    box(architecture, 'back-wall-band', [roomWidth, h*.02, .035], [0, floor.position.y+h*.83, back+.03], frameMat);
+    $('pose-readout').textContent = `Webcam: ${(pose.x*100).toFixed(0)}, ${(pose.y*100).toFixed(0)}, ${(pose.z*100).toFixed(0)} cm · Eyes: ${(eye.x*100).toFixed(0)}, ${(eye.y*100).toFixed(0)}, ${(eye.z*100).toFixed(0)} cm (x, y, z from seam center)`;
   }
   function publish() { channel?.postMessage({ type: 'state', state }); }
   function valid(s) {
-    return s && [s.width,s.height,s.depth,s.eye?.x,s.eye?.y,s.eye?.z,s.danceEpoch,s.danceOffset].every(Number.isFinite)
+    return s && [s.width,s.height,s.depth,s.overlap,s.eye?.x,s.eye?.y,s.eye?.z,s.danceEpoch,s.danceOffset].every(Number.isFinite)
       && s.width >= .2 && s.width <= 1.5 && s.height >= .3 && s.height <= 2.5
-      && Math.abs(s.eye.x) <= .35 && Math.abs(s.eye.y) <= .4 && s.eye.z >= .7 && s.eye.z <= 2.5
+      && s.overlap >= -.2 && s.overlap <= .2 && PortraitTracking.validEye(s.eye)
       && s.depth >= -.25 && s.depth <= .1 && typeof s.dancePlaying === 'boolean';
   }
   try {
@@ -206,22 +252,23 @@
     if (isDisplay) channel.postMessage({type: 'hello'});
   } catch { status('Window sync unavailable. Use the spanning view.'); }
   function readouts() {
-    for (const axis of ['x','y','z']) {
-      $('eye-'+axis).value = state.eye[axis]*100;
-      $('eye-'+axis+'-value').value = `${Math.round(state.eye[axis]*100)} cm`;
-    }
     $('model-depth-value').value = `${Math.round(state.depth*100)} cm`;
   }
-  for (const axis of ['x','y','z']) $('eye-'+axis).oninput = event => {
-    state.eye[axis] = Number(event.target.value)/100; readouts(); publish();
-  };
-  $('reset-view').onclick = () => { state.eye = {x: 0, y: 0, z: 1.2}; readouts(); publish(); };
   $('model-depth').oninput = event => { state.depth = Number(event.target.value)/100; readouts(); publish(); };
   for (const key of ['width','height']) $('screen-'+key).onchange = event => {
     if (!event.target.value || !event.target.checkValidity()) { event.target.value = state[key]*100; return; }
     state[key] = Number(event.target.value)/100; publish();
   };
   $('seam').oninput = event => { seam = Number(event.target.value)/100; $('seam-value').value = `${event.target.value}%`; $('seam-marker').style.left = `${event.target.value}%`; };
+  function setOverlap(percent) {
+    if (!Number.isFinite(percent) || percent < -20 || percent > 20) return;
+    state.overlap = percent/100;
+    $('seam-overlap').value = percent;
+    $('seam-overlap-value').value = percent === 0 ? '0% · exact projection' : `${percent > 0 ? '+' : ''}${percent.toFixed(1)}%`;
+    publish();
+  }
+  $('seam-overlap').oninput = event => setOverlap(Number(event.target.value));
+  $('reset-overlap').onclick = () => setOverlap(0);
   $('toggle-dance').onclick = () => {
     state.danceOffset = danceTime(); state.danceEpoch = Date.now(); state.dancePlaying = !state.dancePlaying;
     $('toggle-dance').textContent = state.dancePlaying ? 'Pause motion' : 'Resume motion'; publish();
@@ -240,10 +287,11 @@
   $('fullscreen').onclick = $('display-fullscreen').onclick = () => document.documentElement.requestFullscreen().catch(() => {
     status('Use your browser fullscreen shortcut.'); $('connection').textContent = 'Use your browser fullscreen shortcut.';
   });
-  let trackingSession, trackingReference, trackingSamples = [], lastSeen = 0;
+  let trackingSession, trackingReference, trackingTarget, trackingSamples = [], lastSeen = 0;
+  let smoothingTime = performance.now();
   function invalidateTracking() {
-    trackingReference = null; trackingSamples = []; $('calibrate').disabled = true;
-    if ($('view-mode').value === 'tracking') status('Set your known eye position, hold still, then calibrate tracking.');
+    trackingReference = null; trackingTarget = null; trackingSamples = []; $('calibrate').disabled = true;
+    status('Set the eye-to-webcam distance, hold still, then calibrate tracking.');
   }
   function stopTracking() {
     const old = trackingSession; trackingSession = null;
@@ -261,7 +309,7 @@
   }
   async function startTracking() {
     if (isDisplay) return;
-    stopTracking(); $('view-mode').value = 'tracking';
+    stopTracking();
     const active = {}; trackingSession = active;
     status('Starting webcam…');
     try {
@@ -273,7 +321,7 @@
       if (trackingSession !== active) return;
       video.hidden = false;
       stream.getVideoTracks()[0].addEventListener('ended', () => {
-        if (trackingSession === active) { stopTracking(); status('Webcam disconnected. Restart webcam or select Manual viewpoint.'); }
+        if (trackingSession === active) { stopTracking(); status('Webcam disconnected. Restart webcam.'); }
       });
       active.detector = new FaceMesh({locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`});
       active.detector.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: .6, minTrackingConfidence: .6});
@@ -285,13 +333,16 @@
         lastSeen = now;
         trackingSamples.push({...sample, time: now}); trackingSamples = trackingSamples.filter(s => now-s.time < 1500).slice(-24);
         $('calibrate').disabled = trackingSamples.length < 12;
-        if (!trackingReference) { status(trackingSamples.length < 12 ? 'Eyes detected. Hold still…' : 'Ready to calibrate at the manual eye position.'); return; }
-        const eye = PortraitTracking.estimate(sample, trackingReference);
+        const eye = trackingReference ? PortraitTracking.estimate(sample, trackingReference)
+          : PortraitTracking.eyeFromSample(sample, webcamPose(), Number($('camera-distance-slider').value)/100);
         if (!eye) { invalidateTracking(); return; }
-        const safe = {x: Math.max(-.35, Math.min(.35, eye.x)), y: Math.max(-.4, Math.min(.4, eye.y)), z: Math.max(.7, Math.min(2.5, eye.z))};
-        const limited = Object.keys(safe).some(k => Math.abs(safe[k]-eye[k]) > .001);
-        for (const key of ['x','y','z']) state.eye[key] += (safe[key]-state.eye[key])*.35;
-        status(limited ? 'Tracking outside supported viewing area; viewpoint limited.' : 'Tracking live · top-corner webcam');
+        if (!PortraitTracking.validEye(eye)) {
+          trackingTarget = null;
+          status('Eyes are outside the inward-facing area of the two screens. Check webcam placement and distance. Holding last view.'); return;
+        }
+        trackingTarget = eye;
+        status(trackingReference ? 'Tracking live · calibrated camera distance' : trackingSamples.length < 12
+          ? 'Camera-driven preview. Hold still…' : 'Camera-driven preview. Check the distance, then calibrate tracking.');
         readouts(); publish();
       });
       let lastTime = -1;
@@ -300,27 +351,33 @@
         if (video.readyState >= 2 && video.currentTime !== lastTime) {
           lastTime = video.currentTime; active.captured = performance.now();
           try { active.inFlight = active.detector.send({image: video}); await active.inFlight; }
-          catch { if (trackingSession === active) { stopTracking(); status('Tracking failed. Restart webcam or select Manual viewpoint.'); } return; }
+          catch { if (trackingSession === active) { stopTracking(); status('Tracking failed. Restart webcam.'); } return; }
         }
         if (trackingSession === active) active.frame = requestAnimationFrame(frame);
       };
       status('Finding eyes…'); active.frame = requestAnimationFrame(frame);
     } catch(error) {
       if (trackingSession !== active) return;
-      stopTracking(); status(error.name === 'NotAllowedError' ? 'Webcam permission denied. Select Manual viewpoint or allow access and restart.' : error.message);
+      stopTracking(); status(error.name === 'NotAllowedError' ? 'Webcam permission denied. Allow camera access and restart.' : error.message);
     }
   }
-  $('view-mode').onchange = () => {
-    if ($('view-mode').value === 'tracking') startTracking();
-    else { stopTracking(); status('Manual viewpoint ready.'); }
-  };
   $('restart-camera').onclick = startTracking;
-  $('calibrate').onclick = () => {
-    if (!trackingSession || performance.now()-lastSeen > 300) return;
-    const next = ConcaveTracking.calibrate(trackingSamples, {pose: webcamPose(), eye: {...state.eye}});
-    if (!next || !PortraitTracking.estimate(next, next)) { status('Hold still with eyes in front of the webcam, then calibrate again.'); return; }
-    trackingReference = next; status('Tracking calibrated. Move your head to look around the room.');
+  function calibrateTracking() {
+    if (!trackingSession || performance.now()-lastSeen > 300) return false;
+    const next = ConcaveTracking.calibrate(trackingSamples, {pose: webcamPose()});
+    if (next) next.eye = PortraitTracking.eyeFromSample(next,next.pose,Number($('camera-distance-slider').value)/100);
+    if (!next || !PortraitTracking.validEye(next.eye)) {
+      status('Hold still with your eyes inside the two-screen viewing area; check the webcam placement and distance.'); return false;
+    }
+    trackingReference = next; trackingTarget = {...next.eye}; state.eye = {...next.eye}; publish();
+    status('Tracking calibrated from the webcam and selected distance.'); return true;
+  }
+  $('camera-distance-slider').oninput = event => {
+    $('selected-distance-value').value = `${event.target.value} cm`;
+    trackingReference = null; trackingTarget = null;
+    if (!calibrateTracking()) status('Distance selected. Waiting for stable camera observations; hold still and calibrate.');
   };
+  $('calibrate').onclick = calibrateTracking;
   for (const id of ['webcam-x','webcam-top','webcam-z','webcam-yaw','webcam-tilt','webcam-fov']) {
     const input = $(id); let previous = input.value;
     input.onchange = () => {
@@ -328,20 +385,23 @@
       previous = input.value; invalidateTracking();
     };
   }
-  for (const id of ['screen-width','screen-height','eye-x','eye-y','eye-z']) $(id).addEventListener(id.startsWith('eye') ? 'input' : 'change', invalidateTracking);
-  $('reset-view').addEventListener('click', invalidateTracking);
+  for (const id of ['screen-width','screen-height']) $(id).addEventListener('change', invalidateTracking);
   addEventListener('beforeunload', stopTracking);
   const syncTimer = setInterval(() => {
+    const now = performance.now(), dt = (now-smoothingTime)/1000; smoothingTime = now;
+    if (!isDisplay && trackingTarget && now-lastSeen < 500) {
+      state.eye = PortraitTracking.smoothEye(state.eye, trackingTarget, dt); readouts();
+    }
     if (!isDisplay) publish();
     if (trackingSession?.stream && lastSeen && performance.now()-lastSeen > 500) {
       $('calibrate').disabled = true; status('Tracking paused · eyes obscured or frames stale. Holding viewpoint.');
     }
-  }, 50);
+  }, 33);
   addEventListener('beforeunload', () => { clearInterval(syncTimer); channel?.close(); });
   function resize() { renderer.setSize(innerWidth, innerHeight); }
   addEventListener('resize', resize); resize(); readouts();
   function animate(now) {
-    requestAnimationFrame(animate); updateLayout(); animateDance();
+    requestAnimationFrame(animate); updateRoom(); updateRoomViewResponse(); animateDance(); updateSetupDiagram();
     const eye = new THREE.Vector3(state.eye.x, state.eye.y, state.eye.z);
     const screens = ConcaveGeometry.screens(state.width, state.height);
     const split = Math.round(innerWidth*seam);
@@ -350,9 +410,10 @@
       const x = isDisplay || i === 0 ? 0 : split;
       const width = isDisplay ? innerWidth : i === 0 ? split : innerWidth-split;
       renderer.setViewport(x, 0, width, innerHeight); renderer.setScissor(x, 0, width, innerHeight);
-      ConcaveGeometry.project(THREE, cameras[i], screens[i], eye); renderer.render(scene, cameras[i]);
+      ConcaveGeometry.project(THREE, cameras[i], screens[i], eye, state.overlap); renderer.render(scene, cameras[i]);
     }
     if (isDisplay && now-lastMessage > 2000) $('connection').textContent = 'Controller disconnected — holding last view';
   }
   requestAnimationFrame(animate);
+  if (!isDisplay) startTracking();
 })();

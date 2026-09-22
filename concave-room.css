@@ -5,3 +5,8 @@ input[type=range] { accent-color: #edc58d; }
 #status { color: #edc58d; min-height: 0; }
 .original { font-size: 12px; }
 @media (max-width: 600px) { #controls { width: min(310px, calc(100vw - 24px)); } }
+
+#stage { background: #000; }
+#setup-diagram { width: 100%; background: #091118; border-radius: 8px; margin-top: 10px; }
+#setup-diagram text { fill: #aebfc7; font: 10px system-ui, sans-serif; letter-spacing: .04em; }
+#pose-readout { font-variant-numeric: tabular-nums; }

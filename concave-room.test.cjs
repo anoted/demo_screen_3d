@@ -21,3 +21,27 @@ for(const yaw of [-30,0,30]) for(const tilt of [0,25,45]) for(const height of [.
   assert.equal(estimate({...reference,iris:0},reference),null);
 }
 console.log(`PASS: ${count} webcam pose/eye reconstructions, invalid aspect and iris rejection.`);
+
+const {eyeFromSample, validEye, smoothEye} = globalThis.PortraitTracking;
+for (const range of [.2,.4,.6,.9,1.2,4]) for (const yaw of [-25,0,25]) {
+  const pose = {x:.05,y:.5635,z:0,yaw,tilt:25,fov:60};
+  const raySample = {x:.55,y:.58,aspect:16/9};
+  const eye = eyeFromSample(raySample,pose,range);
+  assert.ok(Math.abs(Math.hypot(eye.x-pose.x,eye.y-pose.y,eye.z-pose.z)-range)<1e-12);
+  const projected = sample(eye,pose);
+  assert.ok(Math.abs(projected.x-raySample.x)<1e-12);
+  assert.ok(Math.abs(projected.y-raySample.y)<1e-12);
+}
+assert.ok(validEye({x:0,y:.4,z:.18}),'Close camera-based viewpoints allowed');
+assert.equal(validEye({x:.3,y:0,z:.2}),false,'Reject eyes behind a panel');
+assert.equal(eyeFromSample({x:.5,y:.5,aspect:1},{x:0,y:0,z:0,yaw:0,tilt:0,fov:60},NaN),null);
+const initial = {x:0,y:0,z:1.2};
+assert.deepEqual(smoothEye(initial,{x:.001,y:-.001,z:1.201},.033),initial);
+function settle(hz) {
+  let eye = {...initial};
+  for(let i=0;i<hz;i++) eye = smoothEye(eye,{x:.2,y:-.1,z:1.5},1/hz);
+  return eye;
+}
+for(const axis of ['x','y','z']) assert.ok(Math.abs(settle(30)[axis]-settle(60)[axis])<1e-9);
+assert.ok(settle(30).x>.19 && settle(30).x<.2);
+console.log('PASS: camera-ray distance reconstruction, close viewing positions, panel half-space validation, sub-2 mm jitter rejection, and frame-rate-independent smoothing.');
