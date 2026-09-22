@@ -1,0 +1,7 @@
+#controls { width: 310px; border-color: #6e6858; }
+summary span, output, #footer { color: #edc58d; }
+input[type=range] { accent-color: #edc58d; }
+#seam-marker { background: #edc58d44; }
+#status { color: #edc58d; min-height: 0; }
+.original { font-size: 12px; }
+@media (max-width: 600px) { #controls { width: min(310px, calc(100vw - 24px)); } }

@@ -4,6 +4,7 @@ Serve this folder with `python -m http.server 8000` (or `bash run.sh`), then ope
 
 - Original: http://localhost:8000/
 - Concave 90° version: http://localhost:8000/concave.html
+- Portrait concave room: http://localhost:8000/concave-room.html (also linked from the index)
 
 ## Concave setup
 
@@ -47,3 +48,15 @@ Three.js and MediaPipe load from CDNs, so internet access is required. Webcam ac
 ## Checks
 
 Run `node concave.test.cjs` with Node 18 or newer and internet access. It checks 243 projection configurations, 27 foreground clearance configurations, foreground/background parallax direction, spanning seam alignment, 45 left-camera position/depth reconstructions, iris extraction/blink rejection, and the actual frame-processing/application wiring using synthetic camera observations. It covers live depth changes, stale/recovered tracking, calibration invalidation, restart, permissions and display synchronization. A physical two-monitor and webcam check is still needed to verify appearance, accuracy and frame rate on your hardware.
+
+## Portrait concave room
+
+The separate `concave-room.html` version defaults to matching **60 × 106.7 cm portrait screens** meeting at 90°. Enter your actual visible dimensions. It uses the same off-axis panel projection, with solid screen-plane window frames, recessed walls, floor joints, cast shadows, and fixed pillars. The dancer moves around the pillars and across the window plane; **Dancer path depth** shifts its path into or out of the room. Pause motion freezes both travel and dancing.
+
+Manual viewpoint mode starts immediately without webcam access. Adjust eye position left/right, above/below screen center, and distance forward from the seam. These are the viewer’s eyes, separate from the tracking webcam’s physical location.
+
+Under **Tracking webcam placement**, the default physical mount is **at the shared top corner, 3 cm above the screens**, centered on the 90° intersection. The lens faces the viewer along the corner bisector with a default **25° downward tilt**. Manually set horizontal/forward offsets, clearance above the top edge, yaw, tilt, and horizontal field of view to match the mount. Webcam height automatically follows screen height. Select **Webcam tracking**, enter your known eye position using the viewpoint sliders, hold still, and press **Calibrate tracking**. Recalibrate after changing placement, dimensions, or the calibration eye position. Iris tracking requires localhost/HTTPS, internet access, and camera permission; manual mode remains available if tracking fails.
+
+Use **H** to hide setup, and **Open left/right** for separate fullscreen windows. Keep the controller open. This page uses its own synchronization channel, independent of the original concave demo. The effect remains a perspective illusion for one viewer; actual appearance and webcam accuracy need checking on the physical screens.
+
+Run `node concave-room.test.cjs` for pose-aware webcam reconstruction checks. The original suite remains `node concave.test.cjs`.

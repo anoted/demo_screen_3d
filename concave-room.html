@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portrait Portal · Concave Room</title>
+<link rel="stylesheet" href="concave.css"><link rel="stylesheet" href="concave-room.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+<script defer src="concave-tracking.js"></script><script defer src="concave-room-tracking.js"></script>
+<script defer src="concave-geometry.js"></script><script defer src="concave-room.js"></script>
+</head>
+<body>
+<main id="stage" aria-label="A deep room viewed through two portrait windows"></main>
+<div id="seam-marker" aria-hidden="true"></div>
+<details id="controls" open>
+<summary>Portrait Portal <span>90° CONCAVE · PORTRAIT ROOM</span></summary>
+<p class="intro">Two windows into one room. The dancer steps around fixed pillars and across the window plane.</p>
+<div class="actions"><button id="hide-setup">Hide setup · H</button><button id="toggle-dance">Pause motion</button></div>
+<label for="view-mode">Viewpoint control</label><select id="view-mode"><option value="manual">Manual viewpoint</option><option value="tracking">Webcam tracking</option></select>
+<label for="eye-x">Viewpoint left / right <output id="eye-x-value"></output></label>
+<input id="eye-x" type="range" min="-35" max="35" step="1" value="0">
+<label for="eye-y">Viewpoint above / below center <output id="eye-y-value"></output></label>
+<input id="eye-y" type="range" min="-40" max="40" step="1" value="0">
+<label for="eye-z">Viewpoint distance from seam <output id="eye-z-value"></output></label>
+<input id="eye-z" type="range" min="70" max="250" step="1" value="120">
+<button id="reset-view">Center viewpoint</button>
+<p class="hint">Set these to your eye position relative to the screen seam. Left/right and height are offsets from screen center. In tracking mode, set your known eye position here before calibrating.</p>
+<label for="model-depth">Dancer path depth <output id="model-depth-value"></output></label>
+<input id="model-depth" type="range" min="-25" max="10" step="1" value="0">
+<p class="hint">Negative values move the path into the room. Let the motion run to see the dancer disappear behind a pillar and return in front.</p>
+<details class="setup"><summary>Tracking webcam placement</summary>
+<p class="hint">Default mount: centered above the shared top corner, facing into the room toward you. Positions are measured from the seam; height follows the screen’s top edge.</p>
+<label>Left / right from seam (cm)<input id="webcam-x" type="number" min="-150" max="150" step="1" value="0"></label>
+<label>Above top edge (cm)<input id="webcam-top" type="number" min="-250" max="100" step="1" value="3"></label>
+<label>Forward from seam (cm)<input id="webcam-z" type="number" min="-50" max="100" step="1" value="0"></label>
+<label>Yaw toward right (°)<input id="webcam-yaw" type="number" min="-80" max="80" step="1" value="0"></label>
+<label>Tilt down (°)<input id="webcam-tilt" type="number" min="-60" max="80" step="1" value="25"></label>
+<label>Horizontal field of view (°)<input id="webcam-fov" type="number" min="30" max="120" step="1" value="60"></label>
+<div class="actions"><button id="calibrate" disabled>Calibrate tracking</button><button id="restart-camera">Restart webcam</button></div>
+<p class="hint">Match the tilt to your mount. Select Webcam tracking, sit at the manual eye position, hold still, then calibrate. Recalibrate after moving the webcam or changing screen dimensions.</p>
+<video id="video" autoplay muted playsinline hidden></video>
+</details>
+<details class="setup" open><summary>Portrait screen setup</summary>
+<div class="dimensions"><label>Width (cm)<input id="screen-width" type="number" min="20" max="150" step="0.1" value="60"></label><label>Height (cm)<input id="screen-height" type="number" min="30" max="250" step="0.1" value="106.7"></label></div>
+<label for="seam">Physical seam alignment <output id="seam-value">50%</output></label><input id="seam" type="range" min="20" max="80" step="0.1" value="50">
+<p class="hint">Enter each panel’s visible dimensions. Span both inward-facing screens, or open a window for each. The split image is a preview on a single flat monitor.</p>
+<div class="actions"><button id="open-left">Open left</button><button id="open-right">Open right</button></div>
+</details>
+<button id="fullscreen">Fullscreen</button><p id="status" role="status">Manual viewpoint ready.</p>
+<a class="original" href="index.html">← Index</a> · <a class="original" href="concave.html">Tracked concave demo</a>
+</details>
+<div id="presentation-tools" hidden><button id="show-setup">Setup · H</button></div>
+<div id="display-tools" hidden><span id="display-title"></span><button id="display-fullscreen">Fullscreen</button><span id="connection" role="status">Waiting for controller…</span></div>
+<div id="footer">PORTRAIT PORTAL <span>Fixed architecture · shared room · H hides setup</span></div>
+</body></html>
