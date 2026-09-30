@@ -175,6 +175,7 @@ for this.
 ### 4.1 Home
 
 - Status card: last calibration time, angle, gap, screen size, webcam state.
+- **Tracking source** switch (§4.4): *Iris size* or *Depth camera*.
 - Two large buttons:
   - **Manual measurement**: "Measure with a tape and type the numbers."
   - **Camera auto-calibration** (optional, shows a *Preview* badge): "Use a
@@ -250,6 +251,94 @@ board**, with nothing attached to the tracking camera.
 Footer: **Apply & start experience**. It uses the current saved/manual
 values.
 
+### 4.4 Tracking source: iris size or depth camera (v2.1)
+
+The eye position needs a distance from the tracking camera. There are two
+ways to get it, and the user can alternate between them at any time. Both
+stay in the app.
+
+| Source | Distance comes from | Needs |
+|---|---|---|
+| **Iris size** (default, v2.0 behaviour) | The apparent iris size compared with the calibrated reference | The eye-distance calibration step (§4.2 step 5) |
+| **Depth camera** | A depth sensor (Orbbec Astra class) read at the face | The depth bridge running (see below). No eye-distance calibration |
+
+**Switching.** A two-button segmented control at the top of Home, labelled
+**Iris size | Depth camera**, plus the key **T** which toggles. The choice
+is saved in the profile. The switch never restarts the webcam, and the eye
+does not jump: the smoothing filter (§4.2 Advanced) blends the change.
+
+**Depth camera panel** (Home, below the switch, folded when the source is
+*Iris size*):
+
+- A status line with a coloured dot: **grey** "Not connected", **amber**
+  "Connected, no reading at your face", **green** "Reading 118 cm".
+- The **bridge address** (default `http://localhost:8765`) and a
+  **Reconnect** button.
+- A small **depth thumbnail** (grayscale, near = bright) with a cross at the
+  point where the app reads the depth and a circle showing the sampling
+  area. If the cross does not sit on your face when you sit in front of the
+  camera, the alignment is wrong (see *Depth field of view* and *Flip*).
+- Fields (under *Advanced* on the Manual page): **Depth FOV** (°, default
+  58 for Astra), **Flip depth horizontally** (No/Yes), **Eye behind the
+  measured surface** (cm, default 1.5: the depth is read from the face
+  surface, the eyeball is slightly behind it).
+
+**How the depth is used.** The eye's direction still comes from the iris
+landmarks in the tracking camera image. The depth sensor gives the
+distance along the camera axis at that direction: the app takes the median
+of the valid depth pixels in a small area around the eyes (forehead, nose
+and cheeks, because the eyes themselves often return no depth). The eye
+position is then: camera position + distance × (the ray through the eyes).
+The depth sensor is assumed to sit at the tracking camera and face the
+same way.
+
+**Fallbacks and messages** (shown in the status pill and the mini-view
+warnings):
+
+| Situation | Behaviour |
+|---|---|
+| Depth source selected, bridge not running | Grey status. If the iris source is calibrated, tracking continues with iris size and the pill says "Depth camera offline: using iris size". If not calibrated, the last eye position is held and the pill says "Depth camera offline". |
+| Bridge running, but no valid depth at the face for over 300 ms | Same fallback. Pill: "No depth at face: using iris size". |
+| Depth reading outside 25 cm – 3 m | Ignored as invalid. |
+| Eyes not visible | Same as today: "Tracking lost: eyes not visible". |
+
+The mini-view tags (§5.1) always say which source produced the current eye:
+**src depth** or **src iris**.
+
+**The depth bridge.** A browser cannot open most depth cameras directly, so
+a small program, `tools/depth_bridge.py`, reads the depth camera and serves
+low-resolution depth frames on `http://localhost:8765`. It is started in
+a second terminal (`python3 tools/depth_bridge.py`). It also has a
+`--simulate` mode with a fake face at a chosen distance, used to try the UI
+without the hardware. Nothing about screen geometry is stored in the bridge.
+
+### 4.5 Look and feel (v2.1)
+
+The visual design follows `3d_projection_demo-master` (only the look and the
+arrangement of controls, not its process):
+
+- **Palette:** near-black blue background `#0b0d12`, translucent dark
+  panels `rgba(18,21,28,.86)` with a hairline border `rgba(255,255,255,.12)`,
+  one cyan accent `#4cc9f0`, muted grey text `#8a93a6`. The left and right
+  screen colours (teal / violet) stay in the mini-view only.
+- **Foldable sections** (like the reference's settings panel folders):
+  each group of fields in the setup panel is a section with a small
+  chevron header that folds. Rows are compact: label on the left, control
+  on the right, sliders with a live value readout.
+- **Readout block** (like the reference's HUD): the debug section starts
+  with a monospace table of `label  value` rows: Source, Eye, Depth,
+  Screen, Wall, Tracking. It replaces the wrapping row of small tags.
+  Warnings stay red below it.
+- **Settings state line** at the bottom of the setup panel, like the
+  reference's "Settings · saved": **Settings · unsaved changes**,
+  **Settings · saved 14:10** or **Settings · defaults**. Buttons next to it:
+  **Revert to saved** and **Reset to defaults** (Apply saves).
+- **Key hints** in one muted line: `T source · H column · D mini-view · P pause · R camera · W preview`.
+- **Webcam preview (W):** a small mirrored preview with the eye marker at the
+  bottom of the column, hidden by default once the experience starts.
+- **Fatal errors** (no WebGL, libraries missing) are shown in a red overlay
+  at the bottom of the screen instead of only in the status line.
+
 ## 5. Experience view
 
 - **Apply** saves the profile, stamps the calibration time and folds the
@@ -281,7 +370,9 @@ while the column is shown. **D** cycles *both → top → side*.
 - the live eye position (dot), with a short trail;
 - the eye → screen frusta, one colour per screen: lines from the eye to
   each lit area's outer edges, showing the view range;
-- the virtual scene's outline (room box and panda position).
+- the virtual scene's outline (room box and panda position);
+- the wall: its opening follows the screens and its back plane is drawn as a
+  thick line, so the thickness can be checked against the values.
 
 **Side view:** the same elements seen from the side, including the webcam
 tilt and the eye height.
@@ -290,7 +381,7 @@ tilt and the eye height.
 - **θ 97.0°**, **gap 1.5 cm**, **33.6 × 59.8 cm**, **offset 0 cm**
 - **Cam: +3 cm top, 0 cm fwd, 25° tilt, 60° FOV**
 - Eye (live): x / y / z in cm, distance to seam, distance to webcam
-- Tracking: FPS, sample age (ms), calibrated yes/no, calibration time
+- Tracking: source (depth / iris), depth reading in cm, FPS, sample age (ms), calibrated yes/no, calibration time (see §4.5 for how these are laid out)
 - Warnings in red, e.g. "Eye outside supported area" or "Eye behind
   left-screen plane".
 
@@ -299,6 +390,31 @@ sit still, tracking is the problem. If the frusta don't meet the screen
 edges, the screen geometry is the problem.
 
 ---
+
+### 5.2 Thick wall (v2.1)
+
+The scene is a **thick wall** with the two screens cut into it, like a real
+window with deep sides. The wall hugs the screens exactly:
+
+- The opening is the outline of the two lit areas (the tilted top and bottom
+  edges, the vertical outer edges, and the gap bridged straight across the
+  seam). There is no black frame and no border inset any more.
+- The wall's front face is the screen surface. It is **thickness** cm deep
+  at its thinnest point (the seam) and its back is a flat plane parallel to
+  the seam line. The top, bottom and outer side faces of the opening are
+  therefore visible, and because they are real geometry they keep the right
+  perspective as the eye moves. The room continues behind the wall's back.
+- **Wall thickness** slider (Home → Scene): 0–20 cm, default 8 cm. 0 removes
+  the wall (the room begins right at the seam).
+- The wall is drawn in a light stone colour with soft shading so its depth
+  is easy to read against the darker room.
+- **Character depth** (Home → Scene) now goes from −25 to +40 cm, default
+  **+16 cm**. A positive value puts the character in front of the seam.
+  The default puts it ahead of the wall, so it looks as if it steps out of
+  the concave corner towards the viewer. Parts of the character that would
+  leave the lit area are cut by the screen edges. This is unavoidable on a
+  physical screen.
+- The alignment test pattern (§4.2 step 4) hides the wall, as before.
 
 ## 6. What changes from the current code (for implementation)
 
@@ -310,6 +426,10 @@ edges, the screen geometry is the problem.
 | New | `calibration-camera.js`: v2.0 = placeholder UI plus calibration-camera selection and preview only. Later: ChArUco detection via OpenCV.js and the shared-board pose solver. |
 | Layout | Left 20% column on the left screen: setup panel above, mini-view below. |
 | Versioning | The current demos are tagged `v1.0` and stay in the repo. v2.0 turns `concave-room.html` into the single app. |
+| Depth | New `depth-source.js` (bridge client, depth sampling), `eyeFromDepth()` in `concave-room-tracking.js`, `tools/depth_bridge.py`. Profile gets `trackingSource` and a `depth` group. |
+| Wall | `concave-room.js`: new opening-following thick wall replaces the flat portal and black frame. Profile gets `advanced.wallThickness`. |
+| Look | `concave-room.css` / `concave-room.html`: §4.5. |
+| Entry point | `index.html` redirects to `concave-room.html`. The old flat demo moves to `backup/index.html`. |
 | Tests | `room-v2.test.cjs`: corner positions for angles 60°–180°, gaps and offsets; a flat 180°, 0-gap pair must match a single wide screen; the angle helper; profile sanitizing. |
 
 ---
@@ -322,3 +442,7 @@ edges, the screen geometry is the problem.
 3. The calibration camera is a **second USB webcam** (no phone support).
 4. Later method: a **shared printed board** seen by both cameras. No marker
    is attached to the tracking camera.
+5. **v2.1:** the depth camera is an *alternative* to iris size, never a
+   replacement. Both stay selectable and iris size stays the default.
+6. **v2.1:** `concave-room.html` is the app's entry point. `index.html` only
+   redirects to it. The original flat demo lives in `backup/`.
