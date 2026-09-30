@@ -404,8 +404,11 @@ window with deep sides. The wall hugs the screens exactly:
   the seam line. The top, bottom and outer side faces of the opening are
   therefore visible, and because they are real geometry they keep the right
   perspective as the eye moves. The room continues behind the wall's back.
-- **Wall thickness** slider (Home → Scene): 0–20 cm, default 8 cm. 0 removes
-  the wall (the room begins right at the seam).
+- **Wall thickness** slider (Home → Scene): 0–20 cm, default 8 cm. It is
+  the extra depth behind the seam. At 0 the wall is only the corner recess
+  itself (the top, bottom and outer faces that connect the tilted screens to
+  the flat back plane); it is never removed, because that would leave a
+  see-through gap between the screens and the room.
 - The wall is drawn in a light stone colour with soft shading so its depth
   is easy to read against the darker room.
 - **Character depth** (Home → Scene) now goes from −25 to +40 cm, default

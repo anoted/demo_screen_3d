@@ -10,10 +10,13 @@
       top: [3, -250, 100], forward: [0, -50, 100], tilt: [25, -60, 80], fov: [60, 30, 120],
       yaw: [0, -80, 80], x: [0, -150, 150]
     },
-    advanced: { overlap: [0, -20, 20], smoothingMs: [180, 20, 1000] }
+    advanced: { overlap: [0, -20, 20], smoothingMs: [180, 20, 1000], wallThickness: [8, 0, 20], modelDepth: [16, -25, 40] },
+    // Depth camera (UX 4.4): sensor horizontal FOV, mirror flag, and how far
+    // the eyeball sits behind the measured face surface (all cm / degrees).
+    depth: { fov: [58, 20, 120], flip: [0, 0, 1], eyeOffset: [1.5, -5, 10] }
   };
   function defaults() {
-    const profile = { version: 2, calibratedAt: null, trackingDeviceId: '' };
+    const profile = { version: 2, calibratedAt: null, trackingDeviceId: '', trackingSource: 'iris', depthUrl: 'http://localhost:8765' };
     for (const [group, fields] of Object.entries(FIELDS)) {
       profile[group] = {};
       for (const [key, [value]] of Object.entries(fields)) profile[group][key] = value;
@@ -32,6 +35,8 @@
     }
     if (typeof input.calibratedAt === 'string' && !Number.isNaN(Date.parse(input.calibratedAt))) profile.calibratedAt = input.calibratedAt;
     if (typeof input.trackingDeviceId === 'string') profile.trackingDeviceId = input.trackingDeviceId.slice(0, 256);
+    if (input.trackingSource === 'iris' || input.trackingSource === 'depth') profile.trackingSource = input.trackingSource;
+    if (typeof input.depthUrl === 'string' && /^https?:\/\/[^\s]{1,200}$/.test(input.depthUrl)) profile.depthUrl = input.depthUrl;
     return profile;
   }
   function inRange(group, key, value) {

@@ -33,6 +33,16 @@
     ['x','y','z'].forEach((key,i) => { eye[key] = pose[key]+scale*(axes.forward[i]+horizontal*axes.right[i]+vertical*axes.up[i]); });
     return eye;
   }
+  // Depth-camera path (UX 4.4): the sample gives the direction, the depth sensor
+  // the distance along the camera's forward axis (a z-depth, not a ray length).
+  function eyeFromDepth(sample, pose, depth) {
+    if (!sample || ![sample.x,sample.y,sample.aspect,pose.x,pose.y,pose.z,pose.yaw,pose.tilt,pose.fov,depth].every(Number.isFinite)
+      || depth <= .05 || sample.aspect <= 0 || pose.fov <= 0 || pose.fov >= 180) return null;
+    const axes = basis(pose), focal = 1/(2*Math.tan(pose.fov*Math.PI/360));
+    const horizontal = (sample.x-.5)/focal, vertical = (.5-sample.y)/(focal*sample.aspect), eye = {};
+    ['x','y','z'].forEach((key,i) => { eye[key] = pose[key]+depth*(axes.forward[i]+horizontal*axes.right[i]+vertical*axes.up[i]); });
+    return eye;
+  }
   function validEye(eye) {
     // Both inward-facing panel half-spaces: z+x > 0 and z-x > 0.
     return eye && [eye.x,eye.y,eye.z].every(Number.isFinite)
@@ -50,5 +60,5 @@
     }
     return next;
   }
-  root.PortraitTracking = { basis, estimate, eyeFromSample, validEye, smoothEye };
+  root.PortraitTracking = { basis, estimate, eyeFromSample, eyeFromDepth, validEye, smoothEye };
 })(typeof window === 'undefined' ? globalThis : window);

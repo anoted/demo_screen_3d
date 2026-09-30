@@ -1,7 +1,7 @@
 /* Debug mini-view (UX §5.1): to-scale top and side views drawn on a canvas. */
 (function (root) {
   const COLORS = { left: '#4fb3bf', right: '#a58bd8', eye: '#edc58d', camera: '#6fa8ff',
-    room: '#56606e', panda: '#f5f2e9', grid: '#1b2530', text: '#aebfc7', warn: '#ff6b6b' };
+    room: '#56606e', wall: '#cfc7b8', panda: '#f5f2e9', grid: '#1b2530', text: '#aebfc7', warn: '#ff6b6b' };
   function cameraAxes(pose) {
     const yaw = pose.yaw*Math.PI/180, tilt = pose.tilt*Math.PI/180;
     return { yaw, tilt };
@@ -38,6 +38,12 @@
     const r0 = map(room.left, room.back), r1 = map(room.right, room.front);
     ctx.strokeRect(r0[0], r0[1], r1[0]-r0[0], r1[1]-r0[1]);
     dot(ctx, map(0, panda.z), Math.max(2, panda.radius*scale), COLORS.panda);
+    // Wall: outer reveals run from the screen edges back to the flat back plane.
+    if (d.wall) {
+      const { back, outerX } = d.wall, l = pair[0].pa, r = pair[1].pb;
+      line(ctx, map(l[0], l[2]), map(-outerX, back), COLORS.wall, 3); line(ctx, map(r[0], r[2]), map(outerX, back), COLORS.wall, 3);
+      line(ctx, map(-outerX, back), map(outerX, back), COLORS.wall, 3);
+    }
     // Frusta from the eye to each lit area's edges.
     if (eye) {
       const e = map(eye.x, eye.z);
@@ -66,6 +72,7 @@
     line(ctx, map(room.back, -room.floor), map(room.front, -room.floor), COLORS.room);
     line(ctx, map(room.back, -room.floor), map(room.back, -room.ceiling), COLORS.room);
     dot(ctx, map(panda.z, 0), Math.max(2, panda.radius*scale), COLORS.panda);
+    if (d.wall) line(ctx, map(d.wall.back, -d.wall.top), map(d.wall.back, -d.wall.floor), COLORS.wall, 3);
     if (eye) {
       const e = map(eye.z, -eye.y);
       pair.forEach(s => { const cc = COLORS[s.name]+'99';

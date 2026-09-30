@@ -8,12 +8,14 @@ window into a 3D room with a floating panda.
 | Version | Status | Where |
 |---|---|---|
 | **v1.0** | Original demos: flat screen, 90° concave, portrait room (90° only). | Tag [`v1.0`](../../tree/v1.0) · details in [`docs/v1-README.md`](docs/v1-README.md) |
+| **v2.1** | Depth camera as an alternative to iris-size distance, a thick wall that hugs the screens, reference-style UI, `index.html` redirects to the app. | Spec: [`docs/UX.md`](docs/UX.md) §4.4, §4.5, §5.2 |
 | **v2.0** | Core app done: one app with calibration (adjustable angle, seam gap), a fully responsive room and a debug mini-view. Camera auto-calibration is a placeholder. | Spec: [`docs/UX.md`](docs/UX.md) |
 
 ## Run
 
 ```bash
-bash run.sh                        # serves this folder on http://localhost:8000
+bash run.sh                        # serves this folder on http://localhost:8000 (index.html opens the app)
+python3 tools/depth_bridge.py      # optional, second terminal: depth camera → http://localhost:8765
 python3 tools/span_window.py       # opens the app fullscreen across both monitors (X11)
 ```
 
@@ -29,7 +31,15 @@ values, calibrate the eye distance, then press **Apply & start
 experience**. Values are saved in the browser. Keys: **H** hide column,
 **D** mini-view mode, **P** pause, **R** restart camera.
 
-Tests (Node 18+): `node room-v2.test.cjs`, `node concave-room.test.cjs`
+**Depth camera (optional).** Pick **Depth camera** in the Tracking source switch (or press **T**).
+The bridge reads an Orbbec Astra-class sensor through OpenNI2 (`pip install openni`, then
+`python3 tools/depth_bridge.py --openni-path <OpenNI2 Redist folder>`). Without hardware,
+`python3 tools/depth_bridge.py --simulate 0.9` streams a fake face 0.9 m away to try the UI. The
+sensor is assumed to sit at the tracking camera and face the same way; adjust *Depth FOV* and
+*Flip depth* under Manual → Advanced until the cross in the depth thumbnail sits on your face.
+If the bridge is offline the app falls back to iris size (when calibrated).
+
+Tests (Node 18+): `node depth.test.cjs`, `node room-v2.test.cjs`, `node concave-room.test.cjs`
 and `node concave.test.cjs`. `npm install three` enables the projection
 check in `room-v2.test.cjs`.
 
@@ -143,8 +153,11 @@ the user confirms **Copy to Manual**. The v2 core app (tasks V1–V6) is done.
 | `room-profile.js` | Saved profile: defaults, validation, save/load, derived geometry |
 | `room-miniview.js` | Debug mini-view drawing (top and side views) |
 | `calibration-camera.js` | Camera auto-calibration (placeholder: camera select and preview) |
-| `concave-tracking.js`, `concave-room-tracking.js` | MediaPipe iris tracking → eye position |
+| `concave-tracking.js`, `concave-room-tracking.js` | MediaPipe iris tracking → eye position (iris size or depth) |
+| `depth-source.js` | Depth bridge client: frame parsing, face-depth sampling |
+| `tools/depth_bridge.py` | Reads the depth sensor, streams frames to the browser (`--simulate` for no hardware) |
+| `backup/index.html` | The original flat demo (`index.html` now redirects to the app) |
 | `tools/span_window.py` | Launch fullscreen across both monitors |
 | `models/panda.glb` | Panda model |
-| `index.html`, `concave.html` | v1.0 demos (kept) |
+| `concave.html`, `backup/index.html` | v1.0 demos (kept) |
 | `docs/UX.md` | v2 UX specification: the source of truth |
