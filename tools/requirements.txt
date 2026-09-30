@@ -1,0 +1,4 @@
+# For a plain virtualenv instead of conda: python3.10 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+# The bridge itself only needs the standard library plus `openni`; numpy is used by the camera tests.
+openni==2.3.0
+numpy

@@ -499,8 +499,8 @@ sliders and folders match the reference exactly.
   folders scroll inside the panel.
 - **Setup buttons** in the Settings panel open modal dialogs (reference
   style, dimmed backdrop, Esc closes): **Depth calibration…** (§8.4),
-  **Camera auto-calibration… (preview)** (§4.3), **Eye-distance calibration…**
-  (§4.2 step 5).
+  **Camera auto-calibration… (preview)** (§4.3). The eye-distance calibration (§4.2
+  step 5) is inline in the Tracking folder (distance slider + **Calibrate iris size**).
 - **Apply & start experience** is the first control in the Settings panel. It
   saves, collapses the panel and starts tracking.
 - The settings title shows the save state: `Concave Room · saved 14:10`,

@@ -83,3 +83,78 @@ console.log(`PASS: ${count} depth reconstructions across poses and depth FOVs.`)
   assert.equal(P.sanitize({ depthUrl: 'javascript:alert(1)' }).depthUrl, 'http://localhost:8765');
   console.log('PASS: profile fields.');
 }
+
+// ---- Depth camera model: ray/surface intersection and calibration fit -----------------------------------
+require('./depth-calibration.js');
+const C = globalThis.DepthCalibration;
+// Synthetic world in the tracking-camera frame. A spherical face whose front surface contains the eye ray point.
+function worldFrame(sample, range, truth, w = 160, h = 120) {
+  const rgbFocal = 1/(2*Math.tan(truth.rgbFov*Math.PI/360)), hx = (sample.x-.5)/rgbFocal, hy = (.5-sample.y)/(rgbFocal*sample.aspect);
+  const n = Math.hypot(hx, hy, 1), dir = [hx/n, hy/n, 1/n], front = range-.015, R = .09;
+  const centre = dir.map(v => v*(front+R));
+  const ax = D.modelAxes(truth.yaw, truth.tilt), focal = 1/(2*Math.tan(truth.fov*Math.PI/360));
+  const cam = [truth.dx, truth.dy, truth.dz], data = new Uint16Array(w*h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let u = (x+.5)/w; if (truth.flip) u = 1-u;
+    const v = (y+.5)/h, a = (u-.5)/focal, b = -(v-.5)/(focal*w/h);
+    const rd = [a*ax.right[0]+b*ax.up[0]+ax.forward[0], a*ax.right[1]+b*ax.up[1]+ax.forward[1], a*ax.right[2]+b*ax.up[2]+ax.forward[2]];
+    // z-depth along the depth axis for a ray with unit z-component: depth = t when rd has forward component 1.
+    const oc = [cam[0]-centre[0], cam[1]-centre[1], cam[2]-centre[2]];
+    const A = rd[0]*rd[0]+rd[1]*rd[1]+rd[2]*rd[2], B = 2*(oc[0]*rd[0]+oc[1]*rd[1]+oc[2]*rd[2]), Cc = oc[0]**2+oc[1]**2+oc[2]**2-R*R, disc = B*B-4*A*Cc;
+    let zd = 2.6;
+    if (disc >= 0) { const t = (-B-Math.sqrt(disc))/(2*A); if (t > 0) zd = t; }
+    const measured = (zd-truth.bias)/truth.scale;      // what the sensor would need to report so that scale*m+bias = zd
+    data[y*w+x] = Math.round(measured*1000);
+  }
+  return { width: w, height: h, data, hfov: truth.fov };
+}
+{
+  const truth = { rgbFov: 60, fov: 58, flip: false, dx: .025, dy: -.01, dz: 0, yaw: 2, tilt: -1.5, scale: 1.04, bias: -.02 };
+  const pose = { x: 0, y: 0, z: 0, yaw: 0, tilt: 0, fov: 60 };
+  // Zero offset, default model: exact z-depth recovery through locate().
+  const plain = { x: .55, y: .45, aspect: 4/3, iris: .012 };
+  const flat = worldFrame(plain, 1.0, { ...D.DEFAULT_MODEL, bias: 0 });
+  const got = D.locate(flat, plain, D.DEFAULT_MODEL);
+  assert.ok(got && Math.abs(got.range+.0-1.0+.015) < .02, `plain locate ${got && got.range}`);
+  // With a real offset/angle model, the intersection recovers the range; ignoring the model does not.
+  let worstTrue = 0, worstIgnored = 0, cases = 0;
+  for (const range of [.6, 1, 1.6]) for (const px of [.3, .5, .7]) {
+    const sample = { x: px, y: .5, aspect: 4/3, iris: .0117*(1/range)*.6 };
+    const frame = worldFrame(sample, range, truth);
+    const ok = D.locate(frame, sample, truth), naive = D.locate(frame, sample, D.DEFAULT_MODEL);
+    assert.ok(ok, `located at ${range} m x=${px}`);
+    worstTrue = Math.max(worstTrue, Math.abs(ok.range+.015-range));
+    worstIgnored = Math.max(worstIgnored, naive ? Math.abs(naive.range+.015-range) : 1);
+    cases++;
+  }
+  assert.ok(worstTrue < .02, `model-aware error ${worstTrue}`);
+  assert.ok(worstIgnored > worstTrue, 'ignoring the model is worse');
+  console.log(`PASS: ${cases} intersection cases (model-aware worst ${(worstTrue*100).toFixed(1)} cm, ignoring model ${(worstIgnored*100).toFixed(1)} cm).`);
+
+  // Fit from tape-measured captures.
+  const captures = [];
+  for (const range of [.6, 1, 1.5]) for (const px of [.35, .5, .65]) {
+    const sample = { x: px, y: .5, aspect: 4/3, iris: .0117*.6/range };
+    captures.push({ sample, frame: worldFrame(sample, range, truth), range });
+  }
+  const result = C.fit(captures, { ...D.DEFAULT_MODEL, fov: 58 }, .015);
+  assert.ok(result, 'fit ran');
+  assert.ok(result.rmsAfter < result.rmsBefore, `error reduced ${result.rmsBefore} -> ${result.rmsAfter}`);
+  assert.ok(result.rmsAfter < 1.5, `after-fit error ${result.rmsAfter} cm`);
+  console.log(`PASS: fit reduced error ${result.rmsBefore.toFixed(1)} cm -> ${result.rmsAfter.toFixed(2)} cm (scale ${result.values.scale.toFixed(3)}, bias ${(result.values.bias*100).toFixed(1)} cm).`);
+  assert.equal(C.fit(captures.slice(0, 4), D.DEFAULT_MODEL), null, 'too few captures');
+  assert.equal(C.fit(captures.filter((c, i) => c.range === 1 || i > 5).slice(0, 5).map(c => ({ ...c, range: 1 })), D.DEFAULT_MODEL), null, 'one distance only');
+  console.log('PASS: fit refuses too few captures / one distance.');
+}
+
+// ---- Profile: depth camera model and in-place assign ----------------------------------------------------
+{
+  const p = P.defaults(), m = P.depthModel(p);
+  assert.equal(m.scale, 1); assert.equal(m.bias, 0); assert.equal(m.flip, false); assert.equal(m.rgbFov, p.trackingCamera.fov);
+  p.depth.dx = 2.5; p.depth.bias = -2; p.depth.flip = 1;
+  const m2 = P.depthModel(p); assert.equal(m2.dx, .025); assert.equal(m2.bias, -.02); assert.equal(m2.flip, true);
+  const group = p.depth; P.assign(p, P.sanitize({ depth: { scale: 1.05 } }));
+  assert.equal(p.depth, group, 'group object identity kept for bound controllers'); assert.equal(p.depth.scale, 1.05); assert.equal(p.depth.dx, 0);
+  assert.equal(P.sanitize({ depth: { scale: 5 } }).depth.scale, 1, 'scale out of range ignored');
+  console.log('PASS: depth model from profile, in-place assign.');
+}

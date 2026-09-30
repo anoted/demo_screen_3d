@@ -83,8 +83,17 @@ def run_openni(path):
         from openni import openni2
     except ImportError:
         sys.exit("The 'openni' package is missing: pip install openni  (or use --simulate)")
-    openni2.initialize(path or os.environ.get('OPENNI2_REDIST'))
-    device = openni2.Device.open_any()
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [path, os.environ.get('OPENNI2_REDIST'), os.path.join(here, '..', '..', 'camera_tests', 'openni2_redist'), os.path.join(here, 'openni2_redist')]
+    redist = next((c for c in candidates if c and os.path.exists(os.path.join(c, 'libOpenNI2.so'))), None)
+    if not redist:
+        sys.exit('OpenNI2 runtime not found. Run tools/setup_depth.sh, or pass --openni-path <folder with libOpenNI2.so>.')
+    info['redist'] = redist
+    openni2.initialize(redist)
+    try:
+        device = openni2.Device.open_any()
+    except Exception as error:
+        sys.exit(f'No depth camera found ({error}). Is it plugged in, and is the udev rule installed? See tools/setup_depth.sh.')
     stream = device.create_depth_stream()
     stream.set_mirroring_enabled(False)  # the app expects the same orientation as the colour image
     stream.start()

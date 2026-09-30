@@ -1,0 +1,11 @@
+# Conda environment for the depth bridge and the camera tests.
+#   conda env create -f tools/environment.yml     (or run tools/setup_depth.sh)
+name: depth_cam
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pip:
+      - openni==2.3.0

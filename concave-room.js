@@ -1,7 +1,8 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const status = message => { $('status').textContent = message; };
+  const ui = { message: '' };
+  const status = message => { ui.message = message; };
   const fatal = message => { const box = $('fatal'); box.hidden = false; box.textContent += message+'\n'; status(message); };
   const typing = el => ['INPUT','SELECT','TEXTAREA'].includes(el?.tagName);
 
@@ -12,7 +13,7 @@
   const profile = loaded.profile;
   let hasSavedProfile = loaded.saved;
   const state = { eye: { x: 0, y: 0, z: 1.20 }, dancePlaying: true, danceEpoch: Date.now(), danceOffset: 0,
-    testPattern: false, miniMode: 'both', trail: [], via: 'iris', viaTime: 0 };
+    testPattern: false, trail: [], via: 'iris', viaTime: 0 };
   let dirty = false;
   let pair, geometryKey = '';
   function derive() {
@@ -22,13 +23,14 @@
   }
   derive();
 
-  if (!window.THREE) { fatal('3D library could not load. Check your connection and reload.'); return; }
+  if (!window.THREE || !window.lil) { fatal('3D or UI library could not load. Check your connection and reload.'); return; }
   let renderer;
   try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
   catch { fatal('WebGL unavailable. Enable hardware acceleration and reload.'); return; }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false; // updated once per frame, not once per viewport
   renderer.setScissorTest(true); $('stage').appendChild(renderer.domElement);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
   scene.add(new THREE.HemisphereLight(0xe1efff, 0x30314a, .45));
@@ -150,142 +152,156 @@
     if (person.children[0]) person.children[0].rotation.z = Math.sin(danceTime()*1.2)*.03;
   }
 
-  // ---------------------------------------------------------------- setup views
-  const VIEWS = { home: 'Home', manual: 'Manual measurement', camera: 'Camera auto-calibration' };
-  let view = 'home';
-  function showView(name) {
-    view = name;
-    for (const key of Object.keys(VIEWS)) $('view-'+key).hidden = key !== name;
-    $('eye-calibration').hidden = name === 'home';
-    $('crumb-current').textContent = name === 'home' ? '' : VIEWS[name];
-    if (name === 'camera') refreshCalibrationCameras(); else CalibrationCamera.stop($('calib-video'));
-    if (name === 'home') renderProfileCard();
-    $('setup-body').scrollTop = 0;
-  }
-  document.addEventListener('click', event => {
-    const target = event.target.closest('[data-view]');
-    if (target) showView(target.dataset.view);
-  });
-  function setSetupOpen(open) {
-    $('setup').classList.toggle('open', open);
-    $('setup-toggle').setAttribute('aria-expanded', open);
-  }
-  $('setup-toggle').onclick = () => setSetupOpen(!$('setup').classList.contains('open'));
+  // ---------------------------------------------------------------- floating panels (UX 8.2)
+  const depthSource = new DepthSource();
+  let depthReading = null, liveSample = null, liveTime = 0;
+  const helper = { source: profile.trackingSource, eyeDistance: 120, device: '', outer: 0, motion: true, pattern: false,
+    get flip() { return profile.depth.flip === 1; }, set flip(value) { profile.depth.flip = value ? 1 : 0; } };
+  const gui = new lil.GUI({ title: 'Concave Room', autoPlace: false, width: 270 });
+  document.body.append(gui.domElement);
+  const refreshGui = () => gui.controllersRecursive().forEach(c => c.updateDisplay());
 
-  function renderProfileCard() {
-    const s = profile.screen, when = profile.calibratedAt ? new Date(profile.calibratedAt).toLocaleString() : null;
-    const camera = trackingSession?.stream ? (trackingReference ? 'tracking, calibrated' : 'tracking, not calibrated') : 'not running';
-    $('profile-card').innerHTML = (hasSavedProfile && when
-      ? `Last calibrated <b>${when}</b>`
-      : 'No saved calibration yet. Use <b>Manual measurement</b>.')
-      + `<br><b>${s.angle.toFixed(1)}°</b> · gap <b>${s.gap} cm</b> · <b>${s.width} × ${s.height} cm</b><br>Webcam: ${camera}`
-      + (hasSavedProfile ? '<br><small>Screens moved? Re-measure, or Apply to reuse these values.</small>' : '');
+  function renderSettingsState() {
+    const when = profile.calibratedAt ? new Date(profile.calibratedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    gui.title(dirty ? 'Concave Room · unsaved changes' : hasSavedProfile ? `Concave Room · saved${when ? ' '+when : ''}` : 'Concave Room · defaults');
   }
-
-  // Bind every profile field input by data-group / data-key.
-  const fieldInputs = [...document.querySelectorAll('[data-group][data-key]')];
-  function fillInputs() {
-    for (const input of fieldInputs) {
-      const { group, key } = input.dataset, [, min, max] = RoomProfile.FIELDS[group][key];
-      input.min = min; input.max = max; input.value = profile[group][key];
-    }
-    syncOuterDistance(); fieldReadouts();
-  }
-  function fieldReadouts() {
-    $('seam-value').value = `${profile.screen.seamSplit}%`;
-    $('wall-value').value = `${profile.advanced.wallThickness} cm`;
-    $('model-depth-value').value = `${profile.advanced.modelDepth > 0 ? '+' : ''}${profile.advanced.modelDepth} cm`;
-    const o = profile.advanced.overlap;
-    $('overlap-value').value = o === 0 ? '0% · exact' : `${o > 0 ? '+' : ''}${o.toFixed(1)}%`;
-  }
-  function syncOuterDistance() {
-    const s = profile.screen;
-    $('outer-distance').value = ConcaveGeometry.outerDistance(s.angle, s.width, s.gap).toFixed(1);
+  function markDirty() { if (!dirty) { dirty = true; renderSettingsState(); } }
+  function syncOuter() {
+    const s = profile.screen; helper.outer = Number(ConcaveGeometry.outerDistance(s.angle, s.width, s.gap).toFixed(1)); ui.outer?.updateDisplay();
   }
   const trackingKeys = new Set(['width','height','angle','gap','vOffset','top','forward','tilt','fov','yaw','x']);
   const affectsTracking = (group, key) => (group === 'screen' || group === 'trackingCamera') && trackingKeys.has(key);
-  for (const input of fieldInputs) {
-    input.addEventListener('input', () => {
-      const { group, key } = input.dataset, value = Number(input.value);
-      if (input.value === '' || !RoomProfile.inRange(group, key, value)) return;
-      profile[group][key] = value;
-      if (group === 'screen' || key === 'wallThickness') { derive(); if (group === 'screen' && key !== 'seamSplit') syncOuterDistance(); }
-      fieldReadouts(); markDirty();
-    });
-    input.addEventListener('change', () => {
-      const { group, key } = input.dataset;
-      if (input.value === '' || !RoomProfile.inRange(group, key, Number(input.value))) { input.value = profile[group][key]; return; }
-      if (affectsTracking(group, key)) invalidateTracking();
-    });
+  function field(folder, group, key, name, step) {
+    const [, min, max] = RoomProfile.FIELDS[group][key];
+    return folder.add(profile[group], key, min, max, step).name(name)
+      .onChange(() => {
+        if (group === 'screen' || key === 'wallThickness') { derive(); if (group === 'screen' && key !== 'seamSplit') syncOuter(); }
+        markDirty();
+      })
+      .onFinishChange(() => { if (affectsTracking(group, key)) invalidateTracking(); });
   }
-  $('outer-distance').addEventListener('input', () => {
-    const s = profile.screen, angle = ConcaveGeometry.angleFromOuterDistance(Number($('outer-distance').value), s.width, s.gap);
-    if (!RoomProfile.inRange('screen', 'angle', angle)) return;
-    profile.screen.angle = Math.round(angle*10)/10;
-    fieldInputs.find(i => i.dataset.key === 'angle').value = profile.screen.angle;
-    derive(); markDirty();
-  });
-  $('outer-distance').addEventListener('change', () => { syncOuterDistance(); invalidateTracking(); });
-  $('test-pattern').onchange = event => { state.testPattern = event.target.checked; };
-  function togglePause() {
-    state.danceOffset = danceTime(); state.danceEpoch = Date.now(); state.dancePlaying = !state.dancePlaying;
-    $('toggle-dance').textContent = state.dancePlaying ? 'Pause motion · P' : 'Resume motion · P';
-  }
-  $('toggle-dance').onclick = togglePause;
+  const extra = (folder, ...children) => { const node = RoomUI.el('div', { class: 'gui-extra' }, ...children); folder.$children.append(node); return node; };
 
-  // Profile export / import.
-  $('export-profile').onclick = () => {
+  ui.apply = gui.add({ apply() { applyProfile(); } }, 'apply').name('▶  Apply & start experience');
+  ui.apply.$name.style.fontWeight = '600'; ui.apply.$name.style.color = '#4cc9f0';
+
+  // -- Tracking
+  const fTrack = gui.addFolder('Tracking');
+  fTrack.add(helper, 'source', { 'Iris size': 'iris', 'Depth camera': 'depth' }).name('Source (T)').onChange(value => setSource(value));
+  ui.device = fTrack.add(helper, 'device', { 'Default camera': '' }).name('Camera').onChange(id => { profile.trackingDeviceId = id; markDirty(); startTracking(); });
+  fTrack.add(helper, 'eyeDistance', 20, 400, 1).name('Eyes → lens (cm)').onChange(() => {
+    trackingReference = null; trackingTarget = null;
+    if (!calibrateTracking()) status('Distance selected. Hold still with both eyes visible, then calibrate.');
+  });
+  ui.calibrate = fTrack.add({ go() { calibrateTracking(); } }, 'go').name('Calibrate iris size'); ui.calibrate.disable();
+  fTrack.add({ go() { startTracking(); } }, 'go').name('Restart webcam (R)');
+  extra(fTrack, 'Measure the distance from the lens to your eyes, sit still with both eyes visible, then calibrate. Depth mode does not need this; it is the fallback.');
+
+  // -- Depth camera
+  const fDepth = gui.addFolder('Depth camera').close();
+  ui.depthDot = RoomUI.el('i', { class: 'dot' }); ui.depthText = RoomUI.el('span', { text: 'Not connected' });
+  ui.thumb = RoomUI.el('canvas', { width: 160, height: 120, 'aria-label': 'Depth thumbnail' });
+  extra(fDepth, RoomUI.el('div', {}, ui.depthDot, ui.depthText), ui.thumb);
+  ui.url = fDepth.add(profile, 'depthUrl').name('Bridge address').onFinishChange(value => {
+    profile.depthUrl = RoomProfile.sanitize({ depthUrl: value.trim() }).depthUrl; ui.url.updateDisplay(); markDirty();
+    if (profile.trackingSource === 'depth') depthSource.connect(profile.depthUrl);
+  });
+  fDepth.add({ go() { depthSource.connect(profile.depthUrl); } }, 'go').name('Reconnect');
+  fDepth.add({ go() { DepthCalibrationUI.open(depthCalibrationContext()); } }, 'go').name('Calibrate depth camera…');
+  const fModel = fDepth.addFolder('Depth camera model').close();
+  field(fModel, 'depth', 'fov', 'FOV (°)', .5);
+  fModel.add(helper, 'flip').name('Flip horizontally').onChange(markDirty);
+  field(fModel, 'depth', 'dx', 'Offset right (cm)', .1); field(fModel, 'depth', 'dy', 'Offset up (cm)', .1);
+  field(fModel, 'depth', 'yaw', 'Yaw (°)', .1); field(fModel, 'depth', 'tilt', 'Tilt down (°)', .1);
+  field(fModel, 'depth', 'scale', 'Distance scale', .001); field(fModel, 'depth', 'bias', 'Distance bias (cm)', .1);
+  field(fModel, 'depth', 'eyeOffset', 'Eye behind face (cm)', .1);
+  fModel.add({ go() {
+    RoomProfile.assign(profile.depth, RoomProfile.defaults().depth); fModel.controllersRecursive().forEach(c => c.updateDisplay()); markDirty();
+  } }, 'go').name('Reset depth calibration');
+
+  // -- Screens
+  const fScreens = gui.addFolder('Screens').close();
+  field(fScreens, 'screen', 'width', 'Width (cm)', .1); field(fScreens, 'screen', 'height', 'Height (cm)', .1);
+  field(fScreens, 'screen', 'angle', 'Inside angle (°)', .5);
+  ui.outer = fScreens.add(helper, 'outer', 1, 400, .1).name('Outer edges (cm)').onChange(value => {
+    const s = profile.screen, angle = ConcaveGeometry.angleFromOuterDistance(value, s.width, s.gap);
+    if (!RoomProfile.inRange('screen', 'angle', angle)) return;
+    s.angle = Math.round(angle*10)/10; derive(); refreshGui(); markDirty();
+  }).onFinishChange(() => { syncOuter(); invalidateTracking(); });
+  field(fScreens, 'screen', 'gap', 'Gap at seam (cm)', .1); field(fScreens, 'screen', 'vOffset', 'Vertical offset (cm)', .1);
+  field(fScreens, 'screen', 'seamSplit', 'Seam position (%)', .1);
+  extra(fScreens, 'Angle between the display surfaces on your side (180 = flat), or type the straight distance between the two outer lit edges. Gap = straight distance between the inner lit edges.');
+
+  // -- Tracking camera
+  const fCamera = gui.addFolder('Tracking camera').close();
+  field(fCamera, 'trackingCamera', 'top', 'Above top (cm)', .5); field(fCamera, 'trackingCamera', 'forward', 'Forward (cm)', .5);
+  field(fCamera, 'trackingCamera', 'tilt', 'Tilt down (°)', 1); field(fCamera, 'trackingCamera', 'fov', 'Horizontal FOV (°)', 1);
+  field(fCamera, 'trackingCamera', 'yaw', 'Yaw (°)', 1); field(fCamera, 'trackingCamera', 'x', 'Left/right (cm)', .5);
+
+  // -- Scene
+  const fScene = gui.addFolder('Scene');
+  field(fScene, 'advanced', 'wallThickness', 'Wall thickness (cm)', .5); field(fScene, 'advanced', 'modelDepth', 'Character depth (cm)', 1);
+  fScene.add(helper, 'motion').name('Motion (P)').onChange(() => togglePause(true));
+  fScene.add(helper, 'pattern').name('Alignment test pattern').onChange(value => { state.testPattern = value; });
+
+  // -- Advanced
+  const fAdvanced = gui.addFolder('Advanced').close();
+  field(fAdvanced, 'advanced', 'overlap', 'Seam overlap (non-physical)', .1); field(fAdvanced, 'advanced', 'smoothingMs', 'Smoothing (ms)', 10);
+
+  // -- Profile
+  const fProfile = gui.addFolder('Profile').close();
+  fProfile.add({ go() { revertProfile(); } }, 'go').name('Revert to saved');
+  fProfile.add({ go() { RoomProfile.assign(profile, RoomProfile.defaults()); afterProfileChange(); markDirty(); status('Defaults restored. Apply to keep them.'); } }, 'go').name('Reset to defaults');
+  fProfile.add({ go() { exportProfile(); } }, 'go').name('Export JSON');
+  fProfile.add({ go() { importProfile(); } }, 'go').name('Import JSON');
+  fProfile.add({ go() { openCameraCalibration(); } }, 'go').name('Camera auto-calibration… (preview)');
+  extra(fProfile, RoomUI.el('span', {}, 'v1.0 demos: ', RoomUI.el('a', { href: 'backup/index.html', text: 'flat' }), ' · ', RoomUI.el('a', { href: 'concave.html', text: '90° concave' })));
+
+  function afterProfileChange() {
+    derive(); helper.source = profile.trackingSource; helper.eyeDistance = helper.eyeDistance; syncOuter(); refreshGui(); invalidateTracking(); applySource(); renderSettingsState();
+  }
+  function revertProfile() {
+    const saved = RoomProfile.load(storage);
+    hasSavedProfile = saved.saved; dirty = false; RoomProfile.assign(profile, saved.profile); afterProfileChange();
+    status(saved.saved ? 'Reverted to the saved profile.' : 'Nothing saved yet: showing defaults.');
+  }
+  function exportProfile() {
     const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' });
     const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'concave-room-profile.json' });
     link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  };
-  $('import-profile').onclick = () => $('import-file').click();
-  $('import-file').onchange = async event => {
-    const file = event.target.files[0]; event.target.value = '';
-    if (!file) return;
-    try {
-      const next = RoomProfile.sanitize(JSON.parse(await file.text()));
-      Object.assign(profile, next); derive(); fillInputs(); invalidateTracking(); applySource(); markDirty();
-      status('Profile imported. Check the values, then Apply.');
-    } catch { status('Could not read that file as a profile JSON.'); }
-  };
-
-  // Apply & start experience (same footer on every view).
-  $('apply').onclick = () => {
+  }
+  function importProfile() {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
+    input.onchange = async () => {
+      const file = input.files[0]; if (!file) return;
+      try { RoomProfile.assign(profile, RoomProfile.sanitize(JSON.parse(await file.text()))); afterProfileChange(); markDirty(); status('Profile imported. Check the values, then Apply.'); }
+      catch { status('Could not read that file as a profile JSON.'); }
+    };
+    input.click();
+  }
+  function applyProfile() {
     profile.calibratedAt = new Date().toISOString();
     hasSavedProfile = RoomProfile.save(storage, profile); dirty = !hasSavedProfile; renderSettingsState();
-    CalibrationCamera.stop($('calib-video'));
-    setSetupOpen(false);
-    if (!trackingSession) startTracking();
+    gui.close(); if (!trackingSession) startTracking();
     status(hasSavedProfile ? 'Applied and saved.' : 'Applied (this browser could not save the profile).');
-  };
+  }
+  function togglePause(fromGui) {
+    state.danceOffset = danceTime(); state.danceEpoch = Date.now(); state.dancePlaying = !state.dancePlaying;
+    helper.motion = state.dancePlaying; if (!fromGui) refreshGui();
+  }
 
-  // ---------------------------------------------------------------- settings state (UX 4.5)
-  function renderSettingsState() {
-    const when = profile.calibratedAt ? new Date(profile.calibratedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    $('settings-state').textContent = dirty ? 'Settings · unsaved changes'
-      : hasSavedProfile ? `Settings · saved${when ? ' '+when : ''}` : 'Settings · defaults';
-    $('settings-state').classList.toggle('dirty', dirty);
-  }
-  function markDirty() { dirty = true; renderSettingsState(); }
-  function replaceProfile(next) {
-    Object.assign(profile, next); derive(); fillInputs(); invalidateTracking(); applySource(); renderSettingsState();
-  }
-  $('revert').onclick = () => {
-    const saved = RoomProfile.load(storage);
-    hasSavedProfile = saved.saved; dirty = false; replaceProfile(saved.profile);
-    status(saved.saved ? 'Reverted to the saved profile.' : 'Nothing saved yet: showing defaults.');
-  };
-  $('reset').onclick = () => { replaceProfile(RoomProfile.defaults()); markDirty(); status('Defaults restored. Apply to keep them.'); };
+  // HUD, webcam preview and the 3D debug view are separate floating panels.
+  const hud = RoomUI.panel({ id: 'hud', title: 'HUD', x: 300, y: 12, width: 250 });
+  const previewVideo = RoomUI.el('video', { id: 'preview-video', muted: true, playsinline: true });
+  const previewEye = RoomUI.el('i', { id: 'preview-eye' });
+  const preview = RoomUI.panel({ id: 'preview', title: 'Webcam (tracking)', x: Math.max(12, innerWidth-280), y: Math.max(12, innerHeight-200), width: 260 });
+  preview.body.append(previewVideo, previewEye); preview.el.classList.add('hidden');
+  const debugView = THREE.OrbitControls ? new DebugView3D(renderer, scene, THREE) : null;
+  if (!debugView) status('OrbitControls unavailable: the 3D debug view is off.');
 
   // ---------------------------------------------------------------- tracking source: iris size or depth camera (UX 4.4)
-  const depthSource = new DepthSource();
-  let depthReading = null;
   function applySource() {
     const depth = profile.trackingSource === 'depth';
-    $('source-iris').setAttribute('aria-pressed', !depth); $('source-depth').setAttribute('aria-pressed', depth);
-    $('depth-panel').open = depth;
-    $('depth-url').value = profile.depthUrl;
     if (depth) { if (depthSource.status === 'off' || depthSource.url !== profile.depthUrl) depthSource.connect(profile.depthUrl); }
     else { depthSource.close(); depthReading = null; }
     state.via = 'iris'; state.viaTime = 0;
@@ -293,68 +309,51 @@
   function setSource(name) {
     if (profile.trackingSource === name) return;
     const clean = !dirty;
-    profile.trackingSource = name; applySource();
+    profile.trackingSource = name; helper.source = name; applySource();
     if (clean) hasSavedProfile = RoomProfile.save(storage, profile) || hasSavedProfile; else markDirty();
-    renderSettingsState();
+    renderSettingsState(); refreshGui();
     status(name === 'depth' ? 'Tracking source: depth camera.' : 'Tracking source: iris size.');
   }
-  $('source-iris').onclick = () => setSource('iris');
-  $('source-depth').onclick = () => setSource('depth');
-  $('depth-reconnect').onclick = () => { depthSource.connect(profile.depthUrl); };
-  $('depth-url').onchange = event => {
-    const next = RoomProfile.sanitize({ depthUrl: event.target.value.trim() }).depthUrl;
-    profile.depthUrl = next; event.target.value = next; markDirty();
-    if (profile.trackingSource === 'depth') depthSource.connect(next);
-  };
-  const depthThumb = $('depth-thumb'), depthCtx = depthThumb.getContext('2d');
   let depthThumbTime = 0;
   function drawDepthThumb(now) {
-    if (now-depthThumbTime < 100 || !$('depth-panel').open || $('view-home').hidden || document.body.classList.contains('column-hidden')) return;
+    if (now-depthThumbTime < 100 || gui._closed || fDepth._closed || document.body.classList.contains('panels-hidden')) return;
     depthThumbTime = now;
-    const frame = depthSource.frame, { width, height } = depthThumb;
-    depthCtx.fillStyle = '#0b0d12'; depthCtx.fillRect(0, 0, width, height);
-    if (!frame) return;
-    if (depthThumb.width !== frame.width || depthThumb.height !== frame.height) { depthThumb.width = frame.width; depthThumb.height = frame.height; }
-    const image = depthCtx.createImageData(frame.width, frame.height);
-    for (let i = 0; i < frame.data.length; i++) {
-      const mm = frame.data[i], valid = mm >= DepthSource.MIN_MM && mm <= DepthSource.MAX_MM;
-      const v = valid ? 255-Math.min(215, (mm-DepthSource.MIN_MM)/(2000-DepthSource.MIN_MM)*215) : 20;
-      image.data[i*4] = v; image.data[i*4+1] = valid ? v : 24; image.data[i*4+2] = valid ? v : 34; image.data[i*4+3] = 255;
-    }
-    depthCtx.putImageData(image, 0, 0);
-    if (depthReading && performance.now()-depthReading.time < 500) {
-      const x = depthReading.u*frame.width, y = depthReading.v*frame.height, r = depthReading.radius*frame.width;
-      depthCtx.strokeStyle = '#4cc9f0'; depthCtx.lineWidth = 1;
-      depthCtx.beginPath(); depthCtx.arc(x, y, r, 0, Math.PI*2); depthCtx.moveTo(x-r-3, y); depthCtx.lineTo(x+r+3, y);
-      depthCtx.moveTo(x, y-r-3); depthCtx.lineTo(x, y+r+3); depthCtx.stroke();
-    }
+    DepthSource.renderDepth(ui.thumb, depthSource.frame, depthReading && now-depthReading.time < 500 ? depthReading : null);
   }
-  function renderDepthStatus(now) {
+  function depthStatus(now) {
     const live = depthReading && now-depthReading.time < 500;
     const [level, text] = depthSource.status === 'connected'
-      ? (live ? ['ok', `Reading ${(depthReading.depth*100).toFixed(0)} cm · ${depthSource.fps.toFixed(0)} fps`] : ['warn', 'Connected, no reading at your face'])
+      ? (live ? ['ok', `Reading ${(depthReading.range*100).toFixed(0)} cm · ${depthSource.fps.toFixed(0)} fps`] : ['warn', 'Connected, no reading at your face'])
       : depthSource.status === 'connecting' ? ['warn', 'Connecting…'] : depthSource.status === 'error' ? ['off', 'Cannot reach the depth bridge'] : ['off', 'Not connected'];
-    $('depth-dot').className = 'dot '+level; $('depth-status').textContent = text;
+    ui.depthDot.className = 'dot '+level; ui.depthText.textContent = text;
+  }
+  // What the depth calibration dialog needs from the running app.
+  function depthCalibrationContext() {
+    return { profile, RoomProfile, depthSource, status,
+      live: () => ({ sample: liveSample, time: liveTime, frame: depthSource.fresh(500), stream: trackingSession?.stream || null, reading: depthReading }),
+      ensureDepth: () => { if (depthSource.status === 'off') depthSource.connect(profile.depthUrl); },
+      apply: values => { const clean = RoomProfile.sanitize({ depth: values }).depth; Object.keys(values).forEach(k => { profile.depth[k] = clean[k]; }); fModel.controllersRecursive().forEach(c => c.updateDisplay()); markDirty(); } };
   }
 
-  // ---------------------------------------------------------------- camera auto-calibration (placeholder)
-  const RESULT_ROWS = [['Inside angle','°'],['Gap','cm'],['Vertical offset','cm'],['Cam height','cm'],['Cam forward','cm'],['Cam yaw','°'],['Cam tilt','°'],['Cam FOV','°']];
-  $('calib-results').tBodies[0].innerHTML = RESULT_ROWS.map(([name, unit]) => `<tr><td>${name} (${unit})</td><td>—</td><td>—</td></tr>`).join('');
+  // ---------------------------------------------------------------- camera auto-calibration (placeholder, UX 4.3)
   let trackingDeviceId = '';
-  async function refreshCalibrationCameras() {
-    const select = $('calib-device'), current = select.value;
-    try {
-      const cameras = await CalibrationCamera.list(trackingDeviceId);
-      select.innerHTML = '<option value="">Select a camera…</option>' + cameras.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
-      if (cameras.some(c => c.id === current)) select.value = current;
-      if (!cameras.length) status('No second camera found. Connect a USB webcam for calibration.');
-    } catch { status('Cannot list cameras. Allow camera access.'); }
+  function openCameraCalibration() {
+    const el = RoomUI.el, video = el('video', { autoplay: true, muted: true, playsinline: true, hidden: true, style: 'width:100%;margin-top:6px' });
+    const select = el('select', {}, el('option', { value: '', text: 'Select a camera…' }));
+    const dlg = RoomUI.dialog({ title: 'Camera auto-calibration (preview)', onClose: () => CalibrationCamera.stop(video) });
+    const rows = [['Inside angle','°'],['Gap','cm'],['Vertical offset','cm'],['Cam height','cm'],['Cam forward','cm'],['Cam yaw','°'],['Cam tilt','°'],['Cam FOV','°']];
+    dlg.content.append(
+      el('p', { text: 'Preview — automatic calibration is not available yet. Use the manual folders (Screens, Tracking camera) instead.' }),
+      el('h2', { text: 'Calibration camera' }), select, video,
+      el('h2', { text: 'Board', style: 'margin-top:14px' }),
+      el('div', { class: 'dlg-row' }, el('button', { text: 'Download board PDF', disabled: true }), el('button', { text: 'Capture', disabled: true }), el('small', { text: '0 / 8 good captures' })),
+      el('h2', { text: 'Results', style: 'margin-top:14px' }),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Value' }), el('th', { text: 'Conf.' }))),
+        el('tbody', {}, rows.map(([n, u]) => el('tr', {}, el('td', { text: `${n} (${u})` }), el('td', { text: '—' }), el('td', { text: '—' }))))));
+    CalibrationCamera.list(trackingDeviceId).then(cameras => cameras.forEach(c => select.append(el('option', { value: c.id, text: c.label }))))
+      .catch(() => status('Cannot list cameras. Allow camera access.'));
+    select.onchange = async () => { try { await CalibrationCamera.preview(select.value, video); } catch { status('Could not open that camera. It may be in use.'); } };
   }
-  $('calib-device').onchange = async event => {
-    try { await CalibrationCamera.preview(event.target.value, $('calib-video')); }
-    catch { status('Could not open that camera. It may be in use.'); }
-  };
-  function escapeHtml(text) { return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
 
   // ---------------------------------------------------------------- tracking
   let trackingSession, trackingReference, trackingTarget, trackingSamples = [], lastSeen = 0;
@@ -365,7 +364,7 @@
       && ConcaveGeometry.inFront(eye, pair, .03);
   }
   function invalidateTracking() {
-    trackingReference = null; trackingTarget = null; trackingSamples = []; $('calibrate').disabled = true;
+    trackingReference = null; trackingTarget = null; trackingSamples = []; ui.calibrate.disable();
     status(profile.trackingSource === 'depth' ? 'Depth camera tracking. Iris calibration is only the fallback.' : 'Set the eye-to-webcam distance, hold still, then calibrate tracking.');
   }
   function stopTracking() {
@@ -375,17 +374,18 @@
       old.stream?.getTracks().forEach(track => track.stop());
       Promise.resolve(old.inFlight).catch(() => {}).then(() => old.detector?.close()).catch(() => {});
     }
-    $('video').srcObject = null; $('preview-video').srcObject = null; $('video').hidden = true; lastSeen = 0; invalidateTracking();
+    $('video').srcObject = null; previewVideo.srcObject = null; lastSeen = 0; invalidateTracking();
   }
   async function refreshTrackingDevices() {
     try {
       const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && d.deviceId);
-      const select = $('tracking-device');
-      select.innerHTML = '<option value="">Default camera</option>' + devices.map((d, i) => `<option value="${d.deviceId}">${escapeHtml(d.label || `Camera ${i+1}`)}</option>`).join('');
-      select.value = devices.some(d => d.deviceId === trackingDeviceId) ? trackingDeviceId : '';
+      const options = { 'Default camera': '' };
+      devices.forEach((d, i) => { options[d.label || `Camera ${i+1}`] = d.deviceId; });
+      helper.device = devices.some(d => d.deviceId === trackingDeviceId) ? trackingDeviceId : '';
+      ui.device = ui.device.options(options).onChange(id => { profile.trackingDeviceId = id; markDirty(); startTracking(); });
+      ui.device.updateDisplay();
     } catch {}
   }
-  $('tracking-device').onchange = event => { profile.trackingDeviceId = event.target.value; startTracking(); };
   async function startTracking() {
     stopTracking();
     const active = {}; trackingSession = active; trackingError = '';
@@ -404,9 +404,8 @@
       if (trackingSession !== active) { stream.getTracks().forEach(t => t.stop()); return; }
       active.stream = stream; trackingDeviceId = stream.getVideoTracks()[0].getSettings().deviceId || '';
       refreshTrackingDevices();
-      const element = $('video'); element.srcObject = stream; $('preview-video').srcObject = stream; $('preview-video').play().catch(() => {}); await element.play();
+      const element = $('video'); element.srcObject = stream; previewVideo.srcObject = stream; previewVideo.play().catch(() => {}); await element.play();
       if (trackingSession !== active) return;
-      element.hidden = false;
       stream.getVideoTracks()[0].addEventListener('ended', () => {
         if (trackingSession === active) { stopTracking(); trackingError = 'Webcam disconnected'; status('Webcam disconnected. Restart webcam.'); }
       });
@@ -416,27 +415,27 @@
         if (trackingSession !== active) return;
         const now = performance.now();
         const sample = now-active.captured < 300 ? ConcaveTracking.sample(results.multiFaceLandmarks?.[0], element.videoWidth/element.videoHeight) : null;
-        if (!sample) { trackingSamples = []; $('calibrate').disabled = true; return; }
+        if (!sample) { trackingSamples = []; ui.calibrate.disable(); return; }
         lastSeen = now; fpsCount++;
         trackingSamples.push({...sample, time: now}); trackingSamples = trackingSamples.filter(s => now-s.time < 1500).slice(-24);
-        $('calibrate').disabled = trackingSamples.length < 12;
-        $('preview-eye').style.left = `${(1-sample.x)*100}%`; $('preview-eye').style.top = `${sample.y*100}%`;
+        ui.calibrate.disable(trackingSamples.length < 12); liveSample = sample; liveTime = now;
+        previewEye.style.left = `${(1-sample.x)*100}%`; previewEye.style.top = `${sample.y*100}%`;
         // Depth camera first when selected (UX 4.4); the calibrated iris estimate is its fallback.
         let eye = null, via = 'iris';
         if (profile.trackingSource === 'depth') {
-          const hit = DepthSource.faceDepth(depthSource.fresh(), sample, profile.trackingCamera.fov, profile.depth.fov, profile.depth.flip === 1);
+          const hit = DepthSource.locate(depthSource.fresh(), sample, RoomProfile.depthModel(profile));
           depthReading = hit ? { ...hit, time: now } : null;
-          if (hit) { eye = PortraitTracking.eyeFromDepth(sample, webcamPose(), hit.depth+profile.depth.eyeOffset/100); if (eye) via = 'depth'; }
+          if (hit) { eye = PortraitTracking.eyeFromSample(sample, webcamPose(), hit.range+profile.depth.eyeOffset/100); if (eye) via = 'depth'; }
         }
         if (!eye && (profile.trackingSource !== 'depth' || trackingReference)) {
           eye = trackingReference ? PortraitTracking.estimate(sample, trackingReference)
-            : PortraitTracking.eyeFromSample(sample, webcamPose(), Number($('camera-distance-slider').value)/100);
+            : PortraitTracking.eyeFromSample(sample, webcamPose(), helper.eyeDistance/100);
           if (!eye) { invalidateTracking(); return; }
         }
         if (!eye) return; // depth selected, no reading and no iris calibration: hold the last eye
         if (!eyeValid(eye)) { trackingTarget = null; return; }
         trackingTarget = eye; state.via = via; state.viaTime = now;
-        status(via === 'depth' ? `Tracking live · depth camera (${(depthReading.depth*100).toFixed(0)} cm).`
+        status(via === 'depth' ? `Tracking live · depth camera (${(depthReading.range*100).toFixed(0)} cm).`
           : trackingReference ? 'Tracking live · calibrated.' : trackingSamples.length < 12
           ? 'Camera preview. Hold still…' : 'Camera preview. Check the distance, then calibrate tracking.');
       });
@@ -458,23 +457,16 @@
       status(trackingError + '. Fix it, then press Restart webcam (R).');
     }
   }
-  $('restart-camera').onclick = startTracking;
   function calibrateTracking() {
     if (!trackingSession || performance.now()-lastSeen > 300) return false;
     const next = ConcaveTracking.calibrate(trackingSamples, {pose: webcamPose()});
-    if (next) next.eye = PortraitTracking.eyeFromSample(next, next.pose, Number($('camera-distance-slider').value)/100);
+    if (next) next.eye = PortraitTracking.eyeFromSample(next, next.pose, helper.eyeDistance/100);
     if (!next || !eyeValid(next.eye)) {
       status('Hold still with your eyes in front of both screens; check the webcam placement and distance.'); return false;
     }
     trackingReference = next; trackingTarget = {...next.eye}; state.eye = {...next.eye};
     status('Tracking calibrated.'); return true;
   }
-  $('camera-distance-slider').oninput = event => {
-    $('selected-distance-value').value = `${event.target.value} cm`;
-    trackingReference = null; trackingTarget = null;
-    if (!calibrateTracking()) status('Distance selected. Hold still with both eyes visible, then calibrate.');
-  };
-  $('calibrate').onclick = calibrateTracking;
   addEventListener('beforeunload', () => { stopTracking(); CalibrationCamera.stop(); });
   setInterval(() => {
     const now = performance.now(), dt = (now-smoothingTime)/1000; smoothingTime = now;
@@ -486,30 +478,30 @@
     if (now-fpsTime >= 1000) { fps = fpsCount*1000/(now-fpsTime); fpsCount = 0; fpsTime = now; }
   }, 33);
 
-  // ---------------------------------------------------------------- debug mini-view
+  // ---------------------------------------------------------------- HUD and debug views
   const fmt = (v, d = 0) => (v*100).toFixed(d);
-  let lastDebug = 0, lastCard = 0;
+  let lastDebug = 0;
   function updateDebug(now) {
     if (now-lastDebug < 66) return;
     lastDebug = now;
     const pose = webcamPose(), eye = state.eye, fresh = trackingSession?.stream && lastSeen && now-lastSeen < 500;
-    RoomMiniView.draw($('miniview'), { pair, pose, eye: trackingTarget || trackingReference ? eye : null, trail: state.trail,
-      room: bounds, panda: { z: profile.advanced.modelDepth/100, radius: pandaScale()*.35 }, wall: { back: bounds.wallBack, top: bounds.wallTop, floor: bounds.floor, outerX: bounds.outerX } }, state.miniMode);
+    if (debugView?.visible && debugView.panel.open) {
+      RoomMiniView.draw(debugView.mini, { pair, pose, eye: trackingTarget || trackingReference ? eye : null, trail: state.trail,
+        room: bounds, panda: { z: profile.advanced.modelDepth/100, radius: pandaScale()*.35 }, wall: { back: bounds.wallBack, top: bounds.wallTop, floor: bounds.floor, outerX: bounds.outerX } }, 'top');
+    }
     const s = profile.screen, c = profile.trackingCamera, a = profile.advanced;
     const depthMode = profile.trackingSource === 'depth', usingDepth = state.via === 'depth' && now-state.viaTime < 500;
     const live = depthReading && now-depthReading.time < 500;
     const rows = [
       ['Source', depthMode ? (usingDepth ? 'depth camera' : 'depth → iris fallback') : `iris size · ${trackingReference ? 'calibrated' : 'not calibrated'}`],
       ['Eye', `${fmt(eye.x, 1)} / ${fmt(eye.y, 1)} / ${fmt(eye.z, 1)} cm`],
-      ['Depth', depthMode ? (live ? `${fmt(depthReading.depth, 1)} cm (+${profile.depth.eyeOffset} eye)` : '—') : 'off'],
+      ['Depth', depthMode ? (live ? `${fmt(depthReading.range, 1)} cm along ray (+${profile.depth.eyeOffset} eye)` : '—') : 'off'],
       ['Distance', `seam ${fmt(Math.hypot(eye.x, eye.z))} · cam ${fmt(Math.hypot(eye.x-pose.x, eye.y-pose.y, eye.z-pose.z))} cm`],
-      ['Screen', `${s.angle.toFixed(1)}° · gap ${s.gap} · ${s.width}×${s.height} · off ${s.vOffset} cm`],
-      ['Camera', `+${c.top} top · ${c.forward} fwd · ${c.tilt}° tilt · ${c.fov}° FOV` + (c.yaw || c.x ? ` · yaw ${c.yaw}° · x ${c.x}` : '')],
-      ['Wall', `${a.wallThickness} cm thick · character ${a.modelDepth > 0 ? '+' : ''}${a.modelDepth} cm`],
-      ['Tracking', `${fresh ? fps.toFixed(0) : 0} fps · age ${lastSeen ? Math.round(now-lastSeen) : '—'} ms`],
-      ['Profile', profile.calibratedAt ? new Date(profile.calibratedAt).toLocaleTimeString() : 'unsaved']
+      ['Screen', `${s.angle.toFixed(1)}° · gap ${s.gap} · ${s.width}×${s.height} cm`],
+      ['Camera', `+${c.top} top · ${c.forward} fwd · ${c.tilt}° tilt · ${c.fov}° FOV`],
+      ['Wall', `${a.wallThickness} cm · character ${a.modelDepth > 0 ? '+' : ''}${a.modelDepth} cm`],
+      ['Tracking', `${fresh ? fps.toFixed(0) : 0} fps · age ${lastSeen ? Math.round(now-lastSeen) : '—'} ms`]
     ];
-    $('readout').innerHTML = rows.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('');
     const warnings = [];
     if (trackingError) warnings.push(trackingError);
     else if (!trackingSession?.stream) warnings.push('Webcam not running');
@@ -523,48 +515,53 @@
       warnings.push(depthNote);
     }
     if (!trackingReference && fresh && !depthMode) warnings.push('Tracking not calibrated');
-    $('warnings').textContent = warnings.join(' · ');
+    if (hud.open) {
+      hud.body.replaceChildren(...rows.map(([k, v]) => RoomUI.el('div', {}, RoomUI.el('b', { text: k }), RoomUI.el('span', { text: v }))),
+        ...warnings.map(w => RoomUI.el('div', { class: 'warn', text: w })),
+        RoomUI.el('div', { class: 'keys', text: ui.message }),
+        RoomUI.el('div', { class: 'keys', text: 'T source · H HUD · D debug · G all panels · W webcam · P motion · R camera' }));
+    }
     const pill = $('status-pill'), lost = trackingSession?.stream && !fresh, message = lost ? 'Tracking lost: eyes not visible' : depthNote;
     pill.hidden = !message; pill.textContent = message;
-    renderDepthStatus(now); drawDepthThumb(now);
-    $('mini-mode').textContent = state.miniMode;
-    if (view === 'home' && now-lastCard > 1000) { lastCard = now; renderProfileCard(); }
+    depthStatus(now); drawDepthThumb(now);
   }
 
   // ---------------------------------------------------------------- keys & loop
   addEventListener('keydown', event => {
     if (typing(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
     const key = event.key.toLowerCase();
-    if (key === 'h') document.body.classList.toggle('column-hidden');
-    else if (key === 'd') state.miniMode = { both: 'top', top: 'side', side: 'both' }[state.miniMode];
+    if (key === 'h') hud.el.classList.toggle('hidden');
+    else if (key === 'd') debugView?.setVisible(!debugView.visible);
+    else if (key === 'g') document.body.classList.toggle('panels-hidden');
     else if (key === 'p') togglePause();
     else if (key === 't') setSource(profile.trackingSource === 'depth' ? 'iris' : 'depth');
-    else if (key === 'w') document.body.classList.toggle('show-preview');
+    else if (key === 'w') preview.el.classList.toggle('hidden');
     else if (key === 'r') startTracking();
     else return;
     event.preventDefault();
   });
-  function resize() {
-    renderer.setSize(innerWidth, innerHeight);
-    document.documentElement.style.setProperty('--column-width', `${Math.round(innerWidth*profile.screen.seamSplit/100*.2)}px`);
-  }
+  function resize() { renderer.setSize(innerWidth, innerHeight); }
   addEventListener('resize', resize);
-  let lastSplit = profile.screen.seamSplit;
   function animate(now) {
     requestAnimationFrame(animate);
-    if (profile.screen.seamSplit !== lastSplit) { lastSplit = profile.screen.seamSplit; resize(); }
     updateRoom(); animatePanda();
     room.visible = person.visible = !state.testPattern; pattern.visible = state.testPattern;
     const eye = new THREE.Vector3(state.eye.x, state.eye.y, state.eye.z);
     const split = Math.round(innerWidth*profile.screen.seamSplit/100);
+    renderer.shadowMap.needsUpdate = true;
     for (let i = 0; i < 2; i++) {
       const x = i === 0 ? 0 : split, width = i === 0 ? split : innerWidth-split;
       renderer.setViewport(x, 0, width, innerHeight); renderer.setScissor(x, 0, width, innerHeight);
       ConcaveGeometry.project(THREE, cameras[i], pair[i], eye, profile.advanced.overlap/100); renderer.render(scene, cameras[i]);
     }
+    if (debugView && !document.body.classList.contains('panels-hidden')) {
+      debugView.update({ pair, eye: state.eye, trail: state.trail, pose: webcamPose(), depthModel: RoomProfile.depthModel(profile),
+        showDepth: profile.trackingSource === 'depth', via: state.via });
+      debugView.render();
+    }
     updateDebug(now);
   }
-  fillInputs(); resize(); showView('home'); applySource(); renderSettingsState();
+  syncOuter(); resize(); applySource(); renderSettingsState();
   requestAnimationFrame(animate);
   startTracking();
 })();

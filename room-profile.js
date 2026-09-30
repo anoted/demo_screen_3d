@@ -12,8 +12,10 @@
     },
     advanced: { overlap: [0, -20, 20], smoothingMs: [180, 20, 1000], wallThickness: [8, 0, 20], modelDepth: [16, -25, 40] },
     // Depth camera (UX 4.4): sensor horizontal FOV, mirror flag, and how far
-    // the eyeball sits behind the measured face surface (all cm / degrees).
-    depth: { fov: [58, 20, 120], flip: [0, 0, 1], eyeOffset: [1.5, -5, 10] }
+    // the eyeball sits behind the measured face surface, plus the depth camera's position and angle
+    // relative to the tracking camera and its distance correction (UX 8.4). cm / degrees.
+    depth: { fov: [58, 20, 120], flip: [0, 0, 1], eyeOffset: [1.5, -5, 10], dx: [0, -30, 30], dy: [0, -30, 30],
+      yaw: [0, -30, 30], tilt: [0, -30, 30], scale: [1, .7, 1.3], bias: [0, -20, 20] }
   };
   function defaults() {
     const profile = { version: 2, calibratedAt: null, trackingDeviceId: '', trackingSource: 'iris', depthUrl: 'http://localhost:8765' };
@@ -63,5 +65,19 @@
     return { x: c.x/100, y: (s.height/2+Math.abs(s.vOffset)/2+c.top)/100, z: c.forward/100,
       yaw: c.yaw, tilt: c.tilt, fov: c.fov };
   }
-  root.RoomProfile = { KEY, FIELDS, defaults, sanitize, inRange, load, save, geometry, cameraPose };
+  // Depth camera model in metres for DepthSource.locate() (UX 8.4).
+  function depthModel(profile) {
+    const d = profile.depth;
+    return { rgbFov: profile.trackingCamera.fov, fov: d.fov, flip: d.flip === 1, dx: d.dx/100, dy: d.dy/100, dz: 0,
+      yaw: d.yaw, tilt: d.tilt, scale: d.scale, bias: d.bias/100 };
+  }
+  // Copy a profile into another in place, so bound controllers keep pointing at the same group objects.
+  function assign(target, source) {
+    for (const [key, value] of Object.entries(source)) {
+      if (value && typeof value === 'object' && target[key] && typeof target[key] === 'object') Object.assign(target[key], value);
+      else target[key] = value;
+    }
+    return target;
+  }
+  root.RoomProfile = { depthModel, assign, KEY, FIELDS, defaults, sanitize, inRange, load, save, geometry, cameraPose };
 })(typeof window === 'undefined' ? globalThis : window);
