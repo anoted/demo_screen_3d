@@ -59,6 +59,8 @@ screens.
 
 ## 2. App structure
 
+> **Superseded by §8 (v2.2):** the fixed 20% column is replaced by floating, collapsible panels. The rest of this section still describes the launch flow and the setup views' content.
+
 ```
 one browser window spanning both screens (edge to edge)
 ┌──────────────── LEFT SCREEN ────────────────╥──────────────── RIGHT SCREEN ───────────────┐
@@ -314,6 +316,8 @@ without the hardware. Nothing about screen geometry is stored in the bridge.
 
 ### 4.5 Look and feel (v2.1)
 
+> **Superseded by §8.1 (v2.2).** Kept for the palette.
+
 The visual design follows `3d_projection_demo-master` (only the look and the
 arrangement of controls, not its process):
 
@@ -359,6 +363,8 @@ arrangement of controls, not its process):
   "Tracking lost: eyes not visible".
 
 ### 5.1 Debug mini-view (digital review)
+
+> **v2.2:** the *side* view is replaced by the 3D debug view (§8.3). The top view stays.
 
 The lower section of the left-side 20% column (§2). It is always visible
 while the column is shown. **D** cycles *both → top → side*.
@@ -449,3 +455,142 @@ window with deep sides. The wall hugs the screens exactly:
    replacement. Both stay selectable and iris size stays the default.
 6. **v2.1:** `concave-room.html` is the app's entry point. `index.html` only
    redirects to it. The original flat demo lives in `backup/`.
+
+---
+
+## 8. v2.2: floating UI and depth calibration
+
+### 8.1 Principles
+
+The scene owns the whole window. Nothing is docked. Everything else is a
+small, sharp, floating panel that can be collapsed to a title bar or hidden.
+The look copies `3d_projection_demo-master` closely: flat panels, 1 px hairline
+borders, square corners (radius ≤ 3 px), the `lil-gui` control style, and the
+same palette (§4.5). The panels use the real `lil-gui` library, so spacing,
+sliders and folders match the reference exactly.
+
+### 8.2 Floating panels
+
+```
+┌ whole window (both screens, edge to edge) ─────────────────────────────┐
+│ ┌─ Concave Room ─ ▾ ┐                                                  │
+│ │ Tracking ▸        │            the 3D scene                          │
+│ │ Depth camera ▸    │                                                  │
+│ │ Screens ▸ …       │                                                  │
+│ └───────────────────┘                                                  │
+│ ┌ HUD ─────────┐                                    ┌ Debug view ───┐  │
+│ │ Source depth │                                    │  3D, orbitable│  │
+│ │ Eye 3 / …    │                                    │  + top strip  │  │
+│ └──────────────┘                                    └───────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+| Panel | Default position | Content | Collapse |
+|---|---|---|---|
+| **Settings** (lil-gui) | top-left | Folders: Tracking, Depth camera, Screens, Tracking camera, Scene, Advanced, Profile | Click the title bar. Starts open until the first **Apply**, then collapses to the title bar. |
+| **HUD** | below Settings | Monospace rows: Source, Eye, Depth, Screen, Wall, Tracking, warnings | **H** hides it |
+| **Debug view** | bottom-left | 3D view (§8.3) with the top view strip under it | Click the title bar, or **D** |
+| **Webcam preview** (**W**) | bottom-right | Mirrored tracking-camera image with the iris marker | **W** |
+
+- **G** shows or hides *all* panels at once. Hidden panels never affect the
+  image (they float over it and are not part of the projection).
+- Panels can be dragged by their title bar. Positions are remembered.
+- The panels are small (about 240 px wide) and never scroll the page. Long
+  folders scroll inside the panel.
+- **Setup buttons** in the Settings panel open modal dialogs (reference
+  style, dimmed backdrop, Esc closes): **Depth calibration…** (§8.4),
+  **Camera auto-calibration… (preview)** (§4.3), **Eye-distance calibration…**
+  (§4.2 step 5).
+- **Apply & start experience** is the first control in the Settings panel. It
+  saves, collapses the panel and starts tracking.
+- The settings title shows the save state: `Concave Room · saved 14:10`,
+  `· unsaved changes` or `· defaults`.
+- Errors that block the app (no WebGL, libraries missing) use the red
+  overlay from §4.5.
+
+### 8.3 Debug view (3D)
+
+A copy of the reference's debug view: a third-person camera, orbited by
+dragging inside the panel (wheel zooms). It shows the real scene plus:
+
+- the two screens as translucent quads (teal left, violet right), with the wall;
+- the **eye** (yellow sphere with a short trail);
+- the eye → screen frusta, one colour per screen;
+- the **tracking camera** (blue box with its view cone);
+- the **depth camera** (green box, with its own view cone) and, when the depth
+  source is active, the **depth ray**: a line from the tracking camera
+  through the iris to the point where depth was read, ending at the eye;
+- a floor grid and the seam line.
+
+The top view (2D, to scale) stays as a thin strip under the 3D view. The side
+view is removed.
+
+### 8.4 Depth calibration (dialog)
+
+The iris landmarks always say **where the eyes are in the image**. The depth
+camera says **how far**. Calibration makes sure the depth is read where the
+iris points, and that the number is right. Errors grow with distance if the
+depth camera's position or angle is wrong, so both are calibrated.
+
+**Depth camera model** (all editable in the *Depth camera* folder; the dialog fills them):
+
+| Field | Unit | Default | Meaning |
+|---|---|---|---|
+| FOV | ° | 58 | Depth sensor horizontal field of view |
+| Flip | – | No | Depth image mirrored horizontally |
+| Offset x / y / z | cm | 0 / 0 / 0 | Depth sensor position relative to the tracking camera (right / up / forward) |
+| Yaw / Tilt | ° | 0 / 0 | Depth sensor angle relative to the tracking camera |
+| Scale / Bias | – / cm | 1 / 0 | Distance correction: true = scale × measured + bias |
+| Eye behind face | cm | 1.5 | Eyeball is behind the measured face surface |
+
+**How depth is read (replaces §4.4 "How the depth is used").** For a candidate
+distance *t* along the iris ray from the tracking camera, the app converts the
+point to the depth camera's frame (using the offset and angles), projects it to
+a depth pixel and compares the point's depth with the measured depth there.
+The eye is where they first match. So the sensor offset and angles are handled
+exactly, at every distance. No match means "no reading".
+
+**Dialog flow** (steps in a left list, content on the right, like the reference
+calibration dialog):
+
+1. **Check.** Live tracking-camera image with the iris marker beside the depth
+   thumbnail with the projected marker and patch. Message: "Sit 80 cm away.
+   The circle on the depth image must be on your face." If depth is not
+   connected: "Start the depth bridge (see README)" with a **Retry** button.
+2. **Capture.** A list of 9 positions: near / middle / far (about 60 / 100 /
+   150 cm) × left / centre / right. For each: the user sits there, measures the
+   distance from the tracking camera lens to the eyes with a tape, types it
+   in cm, and presses **Capture**. Each capture averages 1 s of samples. The
+   prompt shows the current target and a progress bar `n / 9`. Captures can be
+   redone individually. At least 5, including 3 distances, are needed to fit.
+3. **Fit.** **Fit** runs a least-squares fit of Scale/Bias (from distances)
+   and Offset / Yaw / Tilt / FOV (from all captures, kept near their defaults so
+   the result stays sane). A table shows before → after for every field, and
+   the average error in cm before and after. Bad captures (error over 5 cm
+   after the fit) are marked.
+4. **Apply.** **Apply** writes the fields into the Depth camera folder and the
+   profile (the dialog never overwrites values without this press). **Cancel**
+   keeps the old values. **Reset depth calibration** restores the defaults.
+
+Edge cases: fewer than 5 captures disables **Fit**; a fit that does not
+reduce the error is not applied and says so; leaving the dialog keeps
+captures until the page is reloaded.
+
+### 8.5 Running the depth bridge
+
+`bash run.sh` starts the web server and, if the depth environment is set up,
+the bridge. `bash tools/setup_depth.sh` creates the conda environment
+`depth_cam` from `tools/environment.yml`. The app reconnects to the bridge by
+itself; the HUD shows `depth: connecting / reading / lost`. Hardware tests and
+scripts for the camera live in `../camera_tests/`.
+
+### 8.6 What changes in the code
+
+| Area | Change |
+|---|---|
+| `concave-room.html/.css` | Remove the column. Panels are created by script (lil-gui) and floating divs. |
+| `concave-room.js` | Split: scene/tracking stay; UI moves to `room-ui.js`. Add the 3D debug view (`room-debugview.js`). |
+| `depth-source.js` | Ray-march intersection with the depth camera model (§8.4). |
+| `depth-calibration.js` | Capture storage and the least-squares fit (pure functions, tested). |
+| `room-profile.js` | Depth group gets offset, yaw, tilt, scale, bias. |
+| `tools/` | `environment.yml`, `setup_depth.sh`, launcher in `run.sh`, bridge reconnect and clear errors. |
