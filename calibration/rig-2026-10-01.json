@@ -1,0 +1,64 @@
+{
+  "rig": "lab concave pair, two-camera calibration setup",
+  "date": "2026-10-01",
+  "status": "Placement verified with the A4 board (run 4). Camera poses, lens intrinsics and screen pose are NOT solved yet: that needs screen markers and the solver (README tasks C3-C6). Distances and angles below come from solvePnP with an assumed FOV, so they are approximate.",
+  "trackingCamera": {
+    "device": "Orbbec Astra Pro",
+    "mount": "top of the seam, facing the viewer",
+    "colour": {
+      "usb": "2bc5:0502 (UVC, 'Astra Pro FHD Camera')",
+      "mode": "1920x1080 MJPG, 15 fps during calibration",
+      "hfovDeg": null,
+      "hfovAssumedDeg": 60,
+      "note": "Real FOV still to be measured by lens calibration (C5); the app default trackingCamera.fov stays 60."
+    },
+    "depth": {
+      "usb": "2bc5:0403",
+      "api": "OpenNI2, Orbbec OpenNI SDK 2.3.0.86-beta6 (tools/setup_depth.sh)",
+      "mode": "640x480 @ 30 fps, 1 mm units",
+      "hfovDeg": 58.6,
+      "vfovDeg": 45.6,
+      "mirroredByDefault": true,
+      "bridgeMirroring": false,
+      "nearestReadingMm": 580,
+      "bridge": "tools/depth_bridge.py: 160x120 frames at about 30 fps on http://localhost:8765",
+      "note": "No depth calibration (UX 8.4) has been saved yet; offset/angle/scale/bias stay at their defaults."
+    }
+  },
+  "calibrationCamera": {
+    "device": "Lenovo FHD Webcam",
+    "usb": "17ef:4831",
+    "mode": "1920x1080 MJPG, 15 fps",
+    "hfovAssumedDeg": 70,
+    "placement": "in front of the screens, about screen-top height (exact position not recorded); sees both screens completely (run 4 snapshot)"
+  },
+  "usb": "Both cameras at 1080p 15 fps share one USB 2.0 hub: 0 dropouts in all runs. 30 fps on both does not fit.",
+  "board": {
+    "file": "board/charuco_a4_7x5_38mm_4x4.pdf",
+    "cols": 7, "rows": 5, "squareMm": 38, "markerMm": 28, "dictionary": "DICT_4X4_50",
+    "innerCorners": 24, "markers": 17,
+    "printCheck": "7 squares = 266 mm at 100% (Actual size)",
+    "mount": "upright on a post (winch stand), facing the room, to the right of the seat when facing the screens"
+  },
+  "placement": {
+    "final": {
+      "run": "captures/2026-10-01/a4-board/run4-stand-final",
+      "tracking":    { "ok": "6/6", "corners": 19, "pxPerCell": 6.8, "distanceCm": 94, "angleDeg": 50 },
+      "calibration": { "ok": "6/6", "corners": 21, "pxPerCell": 8.2, "distanceCm": 77, "angleDeg": 53 },
+      "repeatability": "identical distance and +/-1 deg angle across all 6 captures"
+    },
+    "rules": {
+      "distanceCm": [75, 95],
+      "maxAngleDeg": 60,
+      "boardCentreBelowTrackingCameraCm": [10, 25],
+      "minCorners": 12,
+      "minPxPerCell": 3
+    },
+    "rejected": {
+      "labBoard": "9x7, 23.5 mm, 13 mm DICT_6X6_250: calibration camera at most 3.2 px/cell, 27 of 65 captures readable",
+      "handHeld": "runs 1-2: board moves between the two cameras' frames; calibration camera angle 49-68 deg, 6-24 corners",
+      "faceUpOnDesk": "outside the tracking camera's view (it sees about 18 deg below its axis)"
+    }
+  },
+  "measureBeforeMoving": "Tape-measure the calibration camera and the board centre relative to the seam (height, distance, left/right) and add them here; they were not recorded on 2026-10-01, and the rig was moved afterwards."
+}

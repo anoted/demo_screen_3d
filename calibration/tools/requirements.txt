@@ -1,0 +1,5 @@
+# Placement test and board generator (OpenCV with the aruco/charuco module).
+#   python3 -m venv .venv && .venv/bin/pip install -r calibration/tools/requirements.txt
+opencv-contrib-python>=4.8
+numpy
+pillow
