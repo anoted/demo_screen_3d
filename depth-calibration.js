@@ -3,7 +3,7 @@
   const D = () => root.DepthSource;
   // Parameters that are fitted, with a prior (default) and how far they are believed to stray.
   const PARAMS = [
-    ['scale', 1, .05], ['bias', 0, .03], ['dx', 0, .03], ['dy', 0, .03], ['yaw', 0, 3], ['tilt', 0, 3], ['fov', 58, 5]
+    ['scale', 1, .05], ['bias', 0, .03], ['dx', 0, .03], ['dy', 0, .03], ['yaw', 0, 3], ['tilt', 0, 3], ['fov', 58.6, 5]
   ];
   const clampScale = (k, v) => k === 'scale' ? Math.min(1.3, Math.max(.7, v)) : v;
 
@@ -71,7 +71,7 @@
       const data = e.reduce((s, v) => s+v*v, 0), prior = x.reduce((s, v, i) => s+((v-priors[i])/sigmas[i])**2, 0);
       return data+prior;
     };
-    const start = PARAMS.map(([k]) => k === 'fov' ? (base.fov || 58) : base[k]);
+    const start = PARAMS.map(([k]) => k === 'fov' ? (base.fov || 58.6) : base[k]);
     let best = { x: start, value: cost(start) };
     for (let round = 0; round < 3; round++) {                       // restarts shrink the simplex around the best point
       const next = nelderMead(cost, best.x, sigmas.map(v => v*(round === 0 ? .6 : .2)), 500);

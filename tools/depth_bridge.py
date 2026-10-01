@@ -36,7 +36,7 @@ class Latest:
 
 
 latest = Latest()
-info = {'source': '', 'hfov': 58.4, 'frames': 0, 'started': time.time()}
+info = {'source': '', 'hfov': 58.6, 'frames': 0, 'started': time.time()}
 
 
 def encode(samples, hfov):
@@ -154,7 +154,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--simulate', type=float, metavar='METRES', help='fake face at this distance instead of a sensor')
-    parser.add_argument('--hfov', type=float, default=58.4, help='horizontal FOV reported in simulation (default: Astra 58.4)')
+    parser.add_argument('--hfov', type=float, default=58.6, help='horizontal FOV reported in simulation (default: Astra Pro 58.6, measured)')
     parser.add_argument('--openni-path', help='OpenNI2 redist folder containing libOpenNI2.so')
     args = parser.parse_args()
     if args.simulate is not None:

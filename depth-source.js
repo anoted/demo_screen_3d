@@ -1,5 +1,5 @@
 /* Depth camera client (UX 4.4). Frames come from tools/depth_bridge.py as server-sent events:
-   {"w":160,"h":120,"hfov":58.4,"unit":"mm","d":"<base64 little-endian uint16>"}; 0 = no reading. */
+   {"w":160,"h":120,"hfov":58.6,"unit":"mm","d":"<base64 little-endian uint16>"}; 0 = no reading. */
 (function (root) {
   const MIN_MM = 250, MAX_MM = 3000;
 
@@ -42,7 +42,7 @@
   // Depth in metres at the face for a tracking sample, or null. `iris` sets the patch size (~3 iris diameters).
   function faceDepth(frame, sample, rgbFov, depthFov, flip) {
     if (!frame || !sample) return null;
-    const fov = depthFov || frame.hfov || 58;
+    const fov = depthFov || frame.hfov || 58.6;
     const map = mapToDepth(sample, rgbFov, fov, frame.width/frame.height, flip);
     if (map.u < 0 || map.u > 1 || map.v < 0 || map.v > 1) return null;
     const hit = depthAt(frame, map.u, map.v, 3*sample.iris*map.scale);
@@ -50,7 +50,7 @@
   }
 
   // ---- Depth camera model (UX 8.4). Frame of the tracking camera: x right, y up, z forward.
-  const DEFAULT_MODEL = { rgbFov: 60, fov: 58, flip: false, dx: 0, dy: 0, dz: 0, yaw: 0, tilt: 0, scale: 1, bias: 0 }; // dx.. and bias in metres
+  const DEFAULT_MODEL = { rgbFov: 60, fov: 58.6, flip: false, dx: 0, dy: 0, dz: 0, yaw: 0, tilt: 0, scale: 1, bias: 0 }; // dx.. and bias in metres
   function modelAxes(yaw, tilt) {
     const y = yaw*Math.PI/180, t = tilt*Math.PI/180, sy = Math.sin(y), cy = Math.cos(y), st = Math.sin(t), ct = Math.cos(t);
     return { right: [cy, 0, -sy], up: [sy*st, ct, cy*st], forward: [sy*ct, -st, cy*ct] };
@@ -60,7 +60,7 @@
   // there. Returns { range, depth, u, v, radius, count } or null. Handles sensor offset and angle at any distance.
   function locate(frame, sample, model = {}) {
     if (!frame || !sample) return null;
-    const m = { ...DEFAULT_MODEL, ...model }, fov = m.fov || frame.hfov || 58;
+    const m = { ...DEFAULT_MODEL, ...model }, fov = m.fov || frame.hfov || 58.6;
     const rgbFocal = 1/(2*Math.tan(m.rgbFov*Math.PI/360)), focal = 1/(2*Math.tan(fov*Math.PI/360)), aspect = frame.width/frame.height;
     const hx = (sample.x-.5)/rgbFocal, hy = (.5-sample.y)/(rgbFocal*sample.aspect), norm = Math.hypot(hx, hy, 1);
     const dir = [hx/norm, hy/norm, 1/norm], axes = modelAxes(m.yaw, m.tilt), radius = 3*sample.iris*focal/rgbFocal;

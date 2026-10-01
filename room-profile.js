@@ -14,7 +14,8 @@
     // Depth camera (UX 4.4): sensor horizontal FOV, mirror flag, and how far
     // the eyeball sits behind the measured face surface, plus the depth camera's position and angle
     // relative to the tracking camera and its distance correction (UX 8.4). cm / degrees.
-    depth: { fov: [58, 20, 120], flip: [0, 0, 1], eyeOffset: [1.5, -5, 10], dx: [0, -30, 30], dy: [0, -30, 30],
+    // FOV 58.6: measured on the lab Astra Pro through OpenNI2 (calibration/rig-2026-10-01.json).
+    depth: { fov: [58.6, 20, 120], flip: [0, 0, 1], eyeOffset: [1.5, -5, 10], dx: [0, -30, 30], dy: [0, -30, 30],
       yaw: [0, -30, 30], tilt: [0, -30, 30], scale: [1, .7, 1.3], bias: [0, -20, 20] }
   };
   function defaults() {

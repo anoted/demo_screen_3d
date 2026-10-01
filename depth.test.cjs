@@ -74,7 +74,7 @@ console.log(`PASS: ${count} depth reconstructions across poses and depth FOVs.`)
 {
   const d = P.defaults();
   assert.equal(d.trackingSource, 'iris'); assert.equal(d.advanced.wallThickness, 8); assert.equal(d.advanced.modelDepth, 16);
-  assert.equal(d.depth.fov, 58); assert.equal(d.depthUrl, 'http://localhost:8765');
+  assert.equal(d.depth.fov, 58.6); assert.equal(d.depthUrl, 'http://localhost:8765');
   const s = P.sanitize({ trackingSource: 'depth', depthUrl: 'http://10.0.0.5:9000', advanced: { wallThickness: 99, modelDepth: 20 }, depth: { fov: 62, flip: 1, eyeOffset: 'x' } });
   assert.equal(s.trackingSource, 'depth'); assert.equal(s.depthUrl, 'http://10.0.0.5:9000');
   assert.equal(s.advanced.wallThickness, 8, 'out of range ignored'); assert.equal(s.advanced.modelDepth, 20);
