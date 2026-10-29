@@ -1,0 +1,48 @@
+[10/29 11:12:47.119325][info][28258][HostTimestampProvider.cpp:36] Update clock type to: realtime(0)
+[10/29 11:12:47.261496][info][28258][LinuxUsbPal.cpp:334] Create PollingDeviceWatcher!
+[10/29 11:12:47.261512][info][28258][DeviceManager.cpp:25] Current found device(s): (1)
+[10/29 11:12:47.261514][info][28258][DeviceManager.cpp:34] 	- Name: FemtoBolt, PID: 0x066b, SN/ID: CL8RC5301TH, Connection: USB3.1
+[10/29 11:12:47.261517][info][28258][DeviceManager.cpp:463] Enable net device enumeration: true
+[10/29 11:12:48.283144][info][28258][DeviceManager.cpp:25] Current device(s) list: (1)
+[10/29 11:12:48.283160][info][28258][DeviceManager.cpp:34] 	- Name: FemtoBolt, PID: 0x066b, SN/ID: CL8RC5301TH, Connection: USB3.1
+[10/29 11:12:49.620643][info][28258][DeviceManager.cpp:200] Device created successfully! Name: Femto Bolt, PID: 0x066b, SN/ID: CL8RC5301TH FW: 1.1.3
+[10/29 11:12:49.620705][info][28258][Pipeline.cpp:54] [CL8RC5301TH] Pipeline created with device: {name: Femto Bolt, sn: CL8RC5301TH}, @0x5ED9865AE030
+[10/29 11:12:49.646208][info][28258][Pipeline.cpp:228] [CL8RC5301TH] Check and set config done!
+[10/29 11:12:49.646222][info][28258][Pipeline.cpp:266] [CL8RC5301TH] Try to start streams!
+[10/29 11:12:49.646229][info][28258][SensorBase.cpp:216] [CL8RC5301TH] Stream state changed from STOPPED to STARTING@Accel
+[10/29 11:12:49.682170][info][28258][Pipeline.cpp:293] [CL8RC5301TH] Start streams done!
+[10/29 11:12:49.682177][info][28258][Pipeline.cpp:250] [CL8RC5301TH] Pipeline start done!
+[10/29 11:12:49.849503][info][28365][SensorBase.cpp:216] [CL8RC5301TH] Stream state changed from STARTING to STREAMING@Accel
+[10/29 11:12:53.817469][info][28258][Pipeline.cpp:367] [CL8RC5301TH] Try to stop pipeline!
+[10/29 11:12:53.817481][info][28258][Pipeline.cpp:343] [CL8RC5301TH] Try to stop streams!
+[10/29 11:12:53.817496][info][28258][SensorBase.cpp:216] [CL8RC5301TH] Stream state changed from STREAMING to STOPPING@Accel
+[10/29 11:12:53.839761][info][28258][SensorBase.cpp:216] [CL8RC5301TH] Stream state changed from STOPPING to STOPPED@Accel
+[10/29 11:12:53.839774][info][28258][Pipeline.cpp:357] [CL8RC5301TH] Sensor stream stopped, sensorType=Accel
+[10/29 11:12:53.839778][info][28258][Pipeline.cpp:363] [CL8RC5301TH] Stop streams done!
+[10/29 11:12:53.839784][info][28258][Pipeline.cpp:393] [CL8RC5301TH] Stop pipeline done!
+[10/29 11:12:53.853970][info][28258][Pipeline.cpp:65] [CL8RC5301TH] Pipeline destroyed! @0x5ED9865AE030
+[10/29 11:12:53.854110][info][28258][SensorBase.cpp:53] [CL8RC5301TH] SensorBase is destroyed
+[10/29 11:12:53.854180][info][28258][SensorBase.cpp:53] [CL8RC5301TH] SensorBase is destroyed
+[10/29 11:12:53.858968][info][28258][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[10/29 11:12:53.858972][info][28258][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[10/29 11:12:53.861916][info][28258][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[10/29 11:12:53.861919][info][28258][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[10/29 11:13:06.534815][info][28408][HostTimestampProvider.cpp:36] Update clock type to: realtime(0)
+[10/29 11:13:06.676877][info][28408][LinuxUsbPal.cpp:334] Create PollingDeviceWatcher!
+[10/29 11:13:06.676894][info][28408][DeviceManager.cpp:25] Current found device(s): (1)
+[10/29 11:13:06.676896][info][28408][DeviceManager.cpp:34] 	- Name: FemtoBolt, PID: 0x066b, SN/ID: CL8RC5301TH, Connection: USB3.1
+[10/29 11:13:06.676898][info][28408][DeviceManager.cpp:463] Enable net device enumeration: true
+[10/29 11:13:07.679502][info][28408][DeviceManager.cpp:25] Current device(s) list: (1)
+[10/29 11:13:07.679527][info][28408][DeviceManager.cpp:34] 	- Name: FemtoBolt, PID: 0x066b, SN/ID: CL8RC5301TH, Connection: USB3.1
+[10/29 11:13:08.027084][info][28408][DeviceManager.cpp:200] Device created successfully! Name: Femto Bolt, PID: 0x066b, SN/ID: CL8RC5301TH FW: 1.1.3
+[10/29 11:13:08.027157][info][28408][Pipeline.cpp:54] [CL8RC5301TH] Pipeline created with device: {name: Femto Bolt, sn: CL8RC5301TH}, @0x6122BBC06140
+[10/29 11:13:08.035077][info][28408][RawPhaseStreamer.cpp:482] Succeed to load depth engine plugin
+[10/29 11:13:08.046292][info][28502][RawPhaseStreamer.cpp:512] initNvramData: metadataHeader.size: 484384, metadataHeader.width: 0, metadataHeader.height: 0
+[10/29 11:13:08.506721][info][28408][Pipeline.cpp:65] [CL8RC5301TH] Pipeline destroyed! @0x6122BBC06140
+[10/29 11:13:08.506791][info][28408][SensorBase.cpp:53] [CL8RC5301TH] SensorBase is destroyed
+[10/29 11:13:08.506857][info][28408][SensorBase.cpp:53] [CL8RC5301TH] SensorBase is destroyed
+[10/29 11:13:08.511724][info][28408][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[10/29 11:13:08.511730][info][28408][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[10/29 11:13:08.511748][info][28408][SensorBase.cpp:53] [CL8RC5301TH] SensorBase is destroyed
+[10/29 11:13:08.512142][info][28408][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[10/29 11:13:08.512143][info][28408][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done

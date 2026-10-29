@@ -12,6 +12,12 @@
   let hasSavedProfile = loaded.saved;
   const state = { eye: { x: 0, y: 0, z: 1.20 }, dancePlaying: true, danceEpoch: Date.now(), danceOffset: 0,
     testPattern: false, miniMode: 'both', trail: [] };
+  // ?eye=x,y,z (cm from the seam) pins the eye, e.g. at a test camera's
+  // solved position, to check the glass illusion from that viewpoint.
+  const pinnedEye = (() => {
+    const v = new URLSearchParams(location.search).get('eye')?.split(',').map(Number);
+    return v?.length === 3 && v.every(Number.isFinite) && v[2] > 0 ? { x: v[0]/100, y: v[1]/100, z: v[2]/100 } : null;
+  })();
   let pair, geometryKey = '';
   function derive() {
     const g = RoomProfile.geometry(profile);
@@ -29,7 +35,9 @@
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setScissorTest(true); $('stage').appendChild(renderer.domElement);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
-  scene.add(new THREE.HemisphereLight(0xe1efff, 0x30314a, .45));
+  const ambient = new THREE.HemisphereLight(0xe1efff, 0x30314a, .45); scene.add(ambient);
+  const glassRoom = GlassRoom.create(THREE);
+  let calibrationUI = null;
   const light = new THREE.DirectionalLight(0xffead5, 1.1);
   light.castShadow = true; light.shadow.mapSize.set(2048, 2048); light.shadow.bias = -.0002; scene.add(light);
   const rim = new THREE.DirectionalLight(0x80bfff, .25); rim.position.set(1, .5, -1); scene.add(rim);
@@ -61,16 +69,32 @@
   let roomLayout = '';
   const bounds = { left: 0, right: 0, back: 0, front: 0, floor: 0, ceiling: 0 };
   function clear(group) {
-    for (const child of [...group.children]) { child.geometry?.dispose(); group.remove(child); }
+    for (const child of [...group.children]) {
+      child.traverse(node => { node.geometry?.dispose(); if (node.userData.disposeMaterial) [].concat(node.material).forEach(m => m?.dispose()); });
+      group.remove(child);
+    }
   }
   function updateRoom() {
-    const layout = geometryKey + profile.boxScene + JSON.stringify(profile.scene);
+    const layout = geometryKey + profile.boxScene + JSON.stringify(profile.scene) + JSON.stringify(profile.glass) + profile.lighting + profile.roomBackdrop + JSON.stringify(profile.calibration?.leftMonitor) + glassRoom.revision;
     if (layout === roomLayout) return;
     roomLayout = layout;
     clear(room); clear(pattern);
     const w = profile.screen.width/100, h = profile.screen.height/100;
-    (profile.boxScene === 'open' ? openBox : cutBox)(w, h);
+    const glass = profile.boxScene === 'glass', white = profile.lighting === 'white';
+    scene.background.setHex(glass ? Math.round(profile.glass[profile.lighting+'Color']) : 0x000000);
+    ambient.color.setHex(glass ? (white ? 0xffffff : 0xe6f0ff) : 0xe1efff);
+    ambient.groundColor.setHex(glass ? 0xb4b0a3 : 0x30314a);
+    ambient.intensity = glass ? .8 : .45;
+    light.color.setHex(glass ? (white ? 0xffffff : 0xfff1de) : 0xffead5);
+    light.intensity = glass ? (white ? .65 : .5) : 1.1;
+    rim.intensity = glass ? .08 : .25;
+    if (glass) {
+      const exposure = profile.glass[profile.lighting+'Exposure']/100;
+      ambient.intensity *= exposure; light.intensity *= exposure;
+      glassRoom.build(room, profile, bounds);
+    } else (profile.boxScene === 'open' ? openBox : cutBox)(w, h);
     light.position.set(-w*.65,h*.65,w*1.8);
+    if (glass) light.position.set(white ? 0 : -1.2, white ? 1.5 : .8, .6);
     light.target.position.set(0,-h*.12,-w*.45); scene.add(light.target);
     const reach = Math.max(w*2,h*1.5);
     Object.assign(light.shadow.camera, {left:-reach,right:reach,top:reach,bottom:-reach,near:.01,far:reach*5});
@@ -221,7 +245,11 @@
     }
     return fitModel(group);
   }
-  function showModel(model) { model.traverse(node => { node.renderOrder = 3; }); person.clear(); person.add(model); }
+  function showModel(model) {
+    model.traverse(node => { node.renderOrder = 3; });
+    person.userData.size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    person.clear(); person.add(model);
+  }
   let modelRequest = 0;
   function loadGltf(url, onDone, label) {
     if (!THREE.GLTFLoader) { status('GLTFLoader unavailable. Check your connection and reload.'); return; }
@@ -240,8 +268,28 @@
   // Box scene (UX §4.1 Scene): cut box or open box; only its own sliders show.
   function showBoxScene() {
     $('box-scene').value = profile.boxScene;
+    $('glass-controls').hidden = profile.boxScene !== 'glass';
+    syncGlassControls();
     $('cut-box-controls').hidden = profile.boxScene !== 'cut'; $('open-box-controls').hidden = profile.boxScene !== 'open';
   }
+  function syncGlassControls() {
+    $('room-lighting').value = profile.lighting;
+    $('room-backdrop').value = profile.roomBackdrop;
+    $('glass-exposure').value = profile.glass[profile.lighting+'Exposure'];
+    $('glass-exposure-value').value = `${$('glass-exposure').value}%`;
+    $('glass-color').value = '#'+Math.round(profile.glass[profile.lighting+'Color']).toString(16).padStart(6,'0');
+    $('glass-frost-value').value = `${profile.glass.frost}%`;
+  }
+  $('room-lighting').onchange = event => { profile.lighting = event.target.value; syncGlassControls(); };
+  $('room-backdrop').onchange = event => { profile.roomBackdrop = event.target.value; };
+  $('glass-exposure').oninput = event => { profile.glass[profile.lighting+'Exposure'] = Number(event.target.value); syncGlassControls(); };
+  $('glass-color').oninput = event => { profile.glass[profile.lighting+'Color'] = parseInt(event.target.value.slice(1),16); };
+  $('glass-image').onchange = async event => {
+    try { await glassRoom.loadImage(event.target.files[0]); status('Clean background loaded for this session.'); }
+    catch (error) { status(error.message); }
+    event.target.value = '';
+  };
+  $('glass-clear-image').onclick = () => glassRoom.loadImage(null);
   $('box-scene').onchange = event => { profile.boxScene = event.target.value; showBoxScene(); };
   showBoxScene();
   $('model-select').value = profile.model;
@@ -261,8 +309,19 @@
   }
   // Automatic size from the screens, times the Scene panda scale.
   function pandaScale() { return Math.min(profile.screen.height/100*.31, profile.screen.width/100*.48)*profile.scene.pandaScale/100; }
+  // Centre height that puts the model's lowest point pandaLift cm above the
+  // bottom edge of the lower panel, measured on its box after turn and tilt.
+  function pandaY() {
+    const s = profile.screen, sc = profile.scene, size = person.userData.size || { x: 1, y: PANDA_HEIGHT, z: 1 };
+    const yaw = sc.pandaYaw*Math.PI/180, pitch = sc.pandaPitch*Math.PI/180;
+    const depth = Math.abs(Math.sin(yaw))*size.x + Math.abs(Math.cos(yaw))*size.z;
+    const height = Math.abs(Math.cos(pitch))*size.y + Math.abs(Math.sin(pitch))*depth;
+    return -(s.height+Math.abs(s.vOffset))/200 + sc.pandaLift/100 + height/2*pandaScale();
+  }
   function animatePanda() {
-    person.position.set(0, 0, profile.scene.pandaForward/100);
+    // Turn about the vertical axis, then tilt about the horizontal one.
+    person.rotation.set(profile.scene.pandaPitch*Math.PI/180, profile.scene.pandaYaw*Math.PI/180, 0, 'XYZ');
+    person.position.set(0, pandaY(), profile.scene.pandaForward/100);
     person.scale.setScalar(pandaScale());
     // Gentle float; paused with P.
     if (person.children[0]) person.children[0].rotation.z = Math.sin(danceTime()*1.2)*.03;
@@ -272,6 +331,7 @@
   const VIEWS = { home: 'Home', manual: 'Manual measurement', camera: 'Camera auto-calibration' };
   let view = 'home';
   function showView(name) {
+    calibrationUI?.hide();
     view = name;
     for (const key of Object.keys(VIEWS)) $('view-'+key).hidden = key !== name;
     $('eye-calibration').hidden = name === 'home';
@@ -311,12 +371,16 @@
     syncOuterDistance(); fieldReadouts();
   }
   function fieldReadouts() {
+    syncGlassControls();
     $('seam-value').value = `${profile.screen.seamSplit}%`;
     const o = profile.advanced.overlap;
     $('overlap-value').value = o === 0 ? '0% · exact' : `${o > 0 ? '+' : ''}${o.toFixed(1)}%`;
     const sc = profile.scene;
     $('panda-scale-value').value = `${sc.pandaScale}%`;
     $('panda-forward-value').value = `${sc.pandaForward > 0 ? '+' : ''}${sc.pandaForward} cm`;
+    $('panda-lift-value').value = `${sc.pandaLift} cm`;
+    $('panda-yaw-value').value = `${sc.pandaYaw > 0 ? '+' : ''}${sc.pandaYaw}°`;
+    $('panda-pitch-value').value = `${sc.pandaPitch > 0 ? '+' : ''}${sc.pandaPitch}°`;
     $('box-width-value').value = `${sc.boxWidth} cm`;
     $('box-height-value').value = `${sc.boxHeight} cm`;
     $('box-forward-value').value = `${sc.boxForward > 0 ? '+' : ''}${sc.boxForward} cm`;
@@ -366,8 +430,11 @@
     } catch {}
     if (!window.getScreenDetails) { status.textContent = 'Span needs Chrome/Edge 100+ (Window Management API).'; return; }
     try {
-      const { screens } = await getScreenDetails();
-      if (screens.length < 2) { status.textContent = 'Only one monitor detected.'; return; }
+      const details = await getScreenDetails();
+      const screens = details.screens.filter(s => s.height > s.width).sort((a,b) => a.left-b.left);
+      if (screens.length !== 2 || screens[0].top !== screens[1].top || screens[0].left+screens[0].width !== screens[1].left || screens[0].width !== screens[1].width || screens[0].height !== screens[1].height) {
+        status.textContent = 'Arrange exactly two equal portrait displays side by side, aligned at the top, in system settings.'; return;
+      }
       const left = Math.min(...screens.map(s => s.left)), top = Math.min(...screens.map(s => s.top));
       const width = Math.max(...screens.map(s => s.left+s.width)) - left;
       const height = Math.max(...screens.map(s => s.top+s.height)) - top;
@@ -400,7 +467,7 @@
     if (!file) return;
     try {
       const next = RoomProfile.sanitize(JSON.parse(await file.text()));
-      Object.assign(profile, next); derive(); fillInputs(); invalidateTracking(); $('detector-select').value = profile.detector; $('model-select').value = profile.model; setModel(profile.model); showBoxScene();
+      Object.assign(profile, next); calibrationUI?.reset(); derive(); fillInputs(); invalidateTracking(); $('detector-select').value = profile.detector; $('model-select').value = profile.model; setModel(profile.model); showBoxScene();
       status('Profile imported. Check the values, then Apply.');
     } catch { status('Could not read that file as a profile JSON.'); }
   };
@@ -410,6 +477,7 @@
     profile.calibratedAt = new Date().toISOString();
     hasSavedProfile = RoomProfile.save(storage, profile);
     CalibrationCamera.stop($('calib-video'));
+    calibrationUI?.hide();
     setSetupOpen(false);
     if (!trackingSession) startTracking();
     if (trackingReference) saveTracking();
@@ -419,20 +487,22 @@
     else status(hasSavedProfile ? 'Applied and saved.' : 'Applied (this browser could not save the profile).');
   };
 
-  // ---------------------------------------------------------------- camera auto-calibration (placeholder)
-  const RESULT_ROWS = [['Inside angle','°'],['Gap','cm'],['Vertical offset','cm'],['Cam height','cm'],['Cam forward','cm'],['Cam yaw','°'],['Cam tilt','°'],['Cam FOV','°']];
-  $('calib-results').tBodies[0].innerHTML = RESULT_ROWS.map(([name, unit]) => `<tr><td>${name} (${unit})</td><td>—</td><td>—</td></tr>`).join('');
+  // ---------------------------------------------------------------- camera calibration
   let trackingDeviceId = '';
   async function refreshCalibrationCameras() {
-    const select = $('calib-device'), current = select.value;
+    const select = $('calib-device'), current = select.value || profile.calibrationDeviceId;
     try {
       const cameras = await CalibrationCamera.list(trackingDeviceId);
       select.innerHTML = '<option value="">Select a camera…</option>' + cameras.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
-      if (cameras.some(c => c.id === current)) select.value = current;
+      if (cameras.some(c => c.id === current)) {
+        select.value = current;
+        if (!$('calib-video').srcObject && view === 'camera') await CalibrationCamera.preview(current, $('calib-video'));
+      }
       if (!cameras.length) status('No second camera found. Connect a USB webcam for calibration.');
     } catch { status('Cannot list cameras. Allow camera access.'); }
   }
   $('calib-device').onchange = async event => {
+    profile.calibrationDeviceId = event.target.value; calibrationUI?.reset();
     try { await CalibrationCamera.preview(event.target.value, $('calib-video')); }
     catch { status('Could not open that camera. It may be in use.'); }
   };
@@ -478,8 +548,8 @@
     } catch {}
   }
   $('detector-select').value = profile.detector;
-  $('detector-select').onchange = event => { profile.detector = event.target.value; startTracking(); };
-  $('tracking-device').onchange = event => { profile.trackingDeviceId = event.target.value; startTracking(); };
+  $('detector-select').onchange = event => { profile.detector = event.target.value; calibrationUI?.reset(); startTracking(); };
+  $('tracking-device').onchange = event => { profile.trackingDeviceId = event.target.value; calibrationUI?.reset(); CalibrationCamera.stop(); startTracking(); };
   // Saved eye calibration: reusable while the webcam pose in the profile is unchanged.
   const TRACKING_KEY = 'concave-room-tracking-v2';
   function saveTracking() {
@@ -720,8 +790,13 @@
     if (now-lastDebug < 66 || document.body.classList.contains('column-hidden')) return;
     lastDebug = now;
     const pose = webcamPose(), eye = state.eye, fresh = trackingSession?.stream && lastSeen && now-lastSeen < 500;
-    RoomMiniView.draw($('miniview'), { pair, pose, eye: trackingTarget || trackingReference ? eye : null, trail: state.trail,
-      room: bounds, panda: { z: profile.scene.pandaForward/100, radius: pandaScale()*.35 } }, state.miniMode);
+    const solved = calibrationUI?.result, stored = profile.calibration;
+    const matrix = solved?.calibrationCamera.matrix || stored?.calibrationCamera.matrix;
+    const calibration = matrix ? {x:matrix[0][3],y:matrix[1][3],z:matrix[2][3],fx:matrix[0][2],fy:matrix[1][2],fz:matrix[2][2]} : null;
+    const solvedPair = solved ? ConcaveGeometry.screens(profile.screen.width/100,profile.screen.height/100,
+      {angle:solved.screen.angle,gap:solved.screen.gap/100,vOffset:solved.screen.vOffset/100}) : null;
+    RoomMiniView.draw($('miniview'), { pair, pose, calibration, solvedPair, eye: trackingTarget || trackingReference ? eye : null, trail: state.trail,
+      room: bounds, panda: { y: pandaY(), z: profile.scene.pandaForward/100, radius: pandaScale()*.35 } }, state.miniMode);
     const s = profile.screen, c = profile.trackingCamera;
     const tags = [
       `θ <b>${s.angle.toFixed(1)}°</b>`, `gap <b>${s.gap} cm</b>`, `<b>${s.width} × ${s.height} cm</b>`, `offset <b>${s.vOffset} cm</b>`,
@@ -771,8 +846,11 @@
   let lastSplit = profile.screen.seamSplit;
   function animate(now) {
     requestAnimationFrame(animate);
+    // The static calibration overlay covers the scene; free GPU time for capture.
+    if (!$('screen-targets').hidden) return;
     if (profile.screen.seamSplit !== lastSplit) { lastSplit = profile.screen.seamSplit; resize(); }
     if (![state.eye.x, state.eye.y, state.eye.z].every(Number.isFinite)) { state.eye = {x: 0, y: 0, z: 1.2}; trackingTarget = null; steady = null; }
+    if (pinnedEye) state.eye = {...pinnedEye};
     updateRoom(); animatePanda();
     room.visible = person.visible = !state.testPattern; pattern.visible = state.testPattern;
     const eye = new THREE.Vector3(state.eye.x, state.eye.y, state.eye.z);
@@ -780,14 +858,34 @@
     for (let i = 0; i < 2; i++) {
       const x = i === 0 ? 0 : split, width = i === 0 ? split : innerWidth-split;
       renderer.setViewport(x, 0, width, innerHeight); renderer.setScissor(x, 0, width, innerHeight);
-      ConcaveGeometry.project(THREE, cameras[i], pair[i], eye, profile.advanced.overlap/100); renderer.render(scene, cameras[i]);
+      ConcaveGeometry.project(THREE, cameras[i], pair[i], eye, profile.advanced.overlap/100);
+      if (profile.boxScene === 'glass' && !state.testPattern) glassRoom.render(renderer, scene, cameras[i], room, person, x, width, innerHeight, profile.glass.frost);
+      else renderer.render(scene, cameras[i]);
     }
     updateLiveDistance(now); updateDebug(now);
   }
+  calibrationUI = ScreenCalibrationUI.init({
+    profile, trackingVideo: () => $('video'), canTrack: () => !measured() && !!trackingSession?.stream,
+    applyResult: result => {
+      const next = RoomProfile.sanitize({...profile, screen: {...profile.screen, ...result.screen},
+        trackingCamera: result.trackingCamera ? {...profile.trackingCamera, ...result.trackingCamera} : profile.trackingCamera,
+        calibration: {deviceId: profile.calibrationDeviceId, intrinsics: result.intrinsics,
+          calibrationCamera: result.calibrationCamera, rms: result.rms, capturedAt: new Date().toISOString(),
+          ...(result.installedPosition ? {installedPosition: true} : {}),
+          ...(result.leftMonitor ? {leftMonitor: result.leftMonitor} : {})}});
+      Object.assign(profile, next); derive(); fillInputs(); invalidateTracking(); showView('manual');
+    },
+    onMatch: match => {
+      profile.glass[profile.lighting+'Color'] = match.color;
+      profile.glass[profile.lighting+'Exposure'] = match.exposure;
+      profile.boxScene = 'glass'; showBoxScene();
+    }
+  });
   const savedDistance = savedTracking()?.distance;
   if (Number.isFinite(savedDistance) && savedDistance >= 20 && savedDistance <= 400) {
     $('camera-distance-slider').value = savedDistance; $('selected-distance-value').value = `${savedDistance} cm`;
   }
+  glassRoom.loadReconstruction().catch(() => status('Room image unavailable; showing the plain whiteboard room.'));
   fillInputs(); resize(); showView('home');
   if (hasSavedProfile) setSetupOpen(false);
   requestAnimationFrame(animate);

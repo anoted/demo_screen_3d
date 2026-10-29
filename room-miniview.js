@@ -29,6 +29,7 @@
     // is at the top of the panel and the viewer at the bottom.
     const pts = [...pair.flatMap(s => [[s.pa[0], s.pa[2]], [s.pb[0], s.pb[2]]]), [pose.x, pose.z]];
     if (eye) pts.push([eye.x, eye.z]);
+    if (d.calibration) pts.push([d.calibration.x,d.calibration.z]);
     pts.push([0, panda.z-panda.radius], [0, -.1]);
     const { map, scale } = fitter(pts, rect);
     ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
@@ -50,6 +51,12 @@
     const c = map(pose.x, pose.z), { yaw } = cameraAxes(pose), len = .25, half = pose.fov*Math.PI/360;
     for (const off of [-half, half]) line(ctx, c, map(pose.x+Math.sin(yaw+off)*len, pose.z+Math.cos(yaw+off)*len), COLORS.camera+'aa');
     dot(ctx, c, 4, COLORS.camera);
+    if (d.calibration) {
+      const q=d.calibration, a=map(q.x,q.z);
+      dot(ctx,a,4,'#89dca8'); line(ctx,a,map(q.x+q.fx*.18,q.z+q.fz*.18),'#89dca8');
+      ctx.fillStyle='#89dca8'; ctx.fillText('2nd · last capture',a[0]+6,a[1]-4);
+      d.solvedPair?.forEach(s=>line(ctx,map(s.pa[0],s.pa[2]),map(s.pb[0],s.pb[2]),'#89dca8',2,[4,3]));
+    }
     // Eye trail and eye.
     trail.forEach((p, i) => dot(ctx, map(p.x, p.z), 1.5, COLORS.eye+(i < trail.length/2 ? '44' : '88')));
     if (eye) dot(ctx, map(eye.x, eye.z), 4, COLORS.eye);
@@ -60,12 +67,13 @@
     // Side view: a = z (toward viewer, right), b = -y (up is up).
     const pts = [...pair.flatMap(s => [[s.pa[2], -s.pa[1]], [s.pc[2], -s.pc[1]], [s.pb[2], -s.pb[1]]]), [pose.z, -pose.y], [-.1, 0]];
     if (eye) pts.push([eye.z, -eye.y]);
+    if (d.calibration) pts.push([d.calibration.z,-d.calibration.y]);
     const { map, scale } = fitter(pts, rect);
     ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
     label(ctx, 'SIDE', rect);
     line(ctx, map(room.back, -room.floor), map(room.front, -room.floor), COLORS.room);
     line(ctx, map(room.back, -room.floor), map(room.back, -room.ceiling), COLORS.room);
-    dot(ctx, map(panda.z, 0), Math.max(2, panda.radius*scale), COLORS.panda);
+    dot(ctx, map(panda.z, -(panda.y || 0)), Math.max(2, panda.radius*scale), COLORS.panda);
     if (eye) {
       const e = map(eye.z, -eye.y);
       pair.forEach(s => { const cc = COLORS[s.name]+'99';
@@ -80,6 +88,7 @@
     const vhalf = Math.atan(Math.tan(pose.fov*Math.PI/360)*9/16), len = .25;
     for (const off of [-vhalf, vhalf]) line(ctx, c, map(pose.z+Math.cos(tilt+off)*len, -(pose.y-Math.sin(tilt+off)*len)), COLORS.camera+'aa');
     dot(ctx, c, 4, COLORS.camera);
+    if(d.calibration){const q=d.calibration;dot(ctx,map(q.z,-q.y),4,'#89dca8');line(ctx,map(q.z,-q.y),map(q.z+q.fz*.18,-q.y-q.fy*.18),'#89dca8');}
     trail.forEach((p, i) => dot(ctx, map(p.z, -p.y), 1.5, COLORS.eye+(i < trail.length/2 ? '44' : '88')));
     if (eye) dot(ctx, map(eye.z, -eye.y), 4, COLORS.eye);
     ctx.restore();

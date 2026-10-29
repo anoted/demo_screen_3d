@@ -84,3 +84,15 @@ th { color: var(--muted); font-weight: normal; }
   background: rgba(10,17,24,.72); color: #fff; font: 600 20px/1.2 system-ui, sans-serif; font-variant-numeric: tabular-nums; white-space: pre; }
 #live-distance small { display: block; font-size: 12px; font-weight: 400; opacity: .8; }
 body.distance-hidden #live-distance { display: none; }
+
+/* Targets are native-resolution images mapped to the measured display halves. */
+#screen-targets { position: fixed; inset: 0; z-index: 10; display: flex; background: white; }
+#screen-targets[hidden] { display: none; }
+#screen-targets img { display: block; height: 100%; object-fit: fill; filter: brightness(var(--target-brightness, .25)); }
+#calib-target-status { position: absolute; left: 18px; top: 18px; width: calc(50% - 36px); max-height: 100px; overflow: hidden; color: #111; background: white; font: 16px/1.4 system-ui, sans-serif; pointer-events: none; }
+body.calibration-targets #column, body.calibration-targets #live-distance, body.calibration-targets #status-pill { visibility: hidden; }
+#calib-video { transform: none; }
+#room-capture { width: 100%; margin-top: 8px; border-radius: 4px; }
+#calib-status { color: var(--accent); }
+#glass-color { width: 100%; height: 28px; border: 0; background: none; }
+#glass-image { max-width: 100%; font-size: 10px; }

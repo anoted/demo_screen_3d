@@ -57,14 +57,14 @@ console.log(`PASS: ${count} angle/gap/offset geometry configurations, flat-pair 
 
 // 10. Profile defaults, sanitizing and derived geometry.
 const d = P.defaults();
-assert.equal(d.screen.angle, 90); assert.equal(d.screen.width, 33.6); assert.equal(d.advanced.overlap, 0);
-const s = P.sanitize({ screen: { angle: 120, gap: 'x', width: 9999, height: 50 }, trackingCamera: { tilt: 30 }, calibratedAt: '2026-09-29T10:00:00Z', evil: 1 });
+assert.equal(d.screen.angle, 90); assert.equal(d.screen.width, 33.5); assert.equal(d.advanced.overlap, 0);
+const s = P.sanitize({ version: 5, screen: { angle: 120, gap: 'x', width: 9999, height: 50 }, trackingCamera: { tilt: 30 }, calibratedAt: '2026-09-29T10:00:00Z', evil: 1 });
 assert.equal(s.screen.angle, 120); assert.equal(s.screen.gap, d.screen.gap); assert.equal(s.screen.width, d.screen.width);
 assert.equal(s.screen.height, 50); assert.equal(s.trackingCamera.tilt, 30); assert.equal(s.evil, undefined);
 assert.equal(P.sanitize(null).screen.angle, 90);
-const g = P.geometry(s); close(g.width, .336, 1e-12, 'metres'); assert.equal(g.options.angle, 120);
+const g = P.geometry(s); close(g.width, .335, 1e-12, 'metres'); assert.equal(g.options.angle, 120);
 const pose = P.cameraPose({ ...d, screen: { ...d.screen, vOffset: 2 } });
-close(pose.y, (59.8/2+1+3)/100, 1e-12, 'camera height above the higher panel');
+close(pose.y, (60/2+1+3)/100, 1e-12, 'camera height above the higher panel');
 const memory = { data: {}, getItem(k) { return this.data[k] ?? null; }, setItem(k, v) { this.data[k] = v; } };
 assert.equal(P.load(memory).saved, false);
 assert.ok(P.save(memory, s)); assert.equal(P.load(memory).profile.screen.angle, 120);
@@ -81,10 +81,15 @@ console.log('PASS: profile defaults, range sanitizing, save/load, camera pose.')
 
 {
   const P3 = globalThis.RoomProfile;
-  assert.equal(P3.defaults().detector, 'two-stage');
-  assert.equal(P3.sanitize({detector: 'landmarker'}).detector, 'landmarker');
-  assert.equal(P3.sanitize({detector: 'nope'}).detector, 'two-stage');
-  console.log('PASS: eye detector field defaults to two-stage and rejects unknown values.');
+  assert.equal(P3.defaults().detector, 'depth-rgb');
+  assert.equal(P3.sanitize({version: 5, detector: 'landmarker'}).detector, 'landmarker');
+  assert.equal(P3.sanitize({version: 5, detector: 'nope'}).detector, 'depth-rgb');
+  // v4 and older profiles belonged to the webcam: Femto Bolt detector and pose.
+  const old = P3.sanitize({version: 4, detector: 'two-stage', trackingCamera: {tilt: 25, forward: 0, top: 4}});
+  assert.equal(old.detector, 'depth-rgb'); assert.equal(old.trackingCamera.tilt, -1);
+  assert.equal(old.trackingCamera.forward, 5); assert.equal(old.trackingCamera.top, 4);
+  assert.equal(P3.sanitize({version: 5, trackingCamera: {tilt: 10}}).trackingCamera.tilt, 10);
+  console.log('PASS: eye detector field defaults to depth-rgb, migrates webcam profiles and rejects unknown values.');
 }
 
 {

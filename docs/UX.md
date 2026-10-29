@@ -152,11 +152,16 @@ for this.
 
 ### Webcam (top of seam)
 
+Defaults are the Orbbec Femto Bolt colour lens as mounted on top of the seam
+(measured from the Lenovo camera and the Femto's accelerometer, level within
+1°). Profiles saved before v5 keep their other camera values but take the
+Femto tilt, forward distance and the depth-rgb detector once.
+
 | Parameter | Unit | Default |
 |---|---|---|
 | Height above top of screens | cm | 3 |
-| Forward from seam (toward viewer) | cm | 0 |
-| Tilt down | ° | 25 |
+| Forward from seam (toward viewer) | cm | 5 |
+| Tilt down | ° | −1 (slightly up) |
 | Horizontal field of view | ° | 60 |
 | Yaw | ° | 0 (along the bisector; shown under *Advanced*) |
 
@@ -191,6 +196,9 @@ for this.
   | Box | — | Cut box | Cut box / Open box | Which box scene is shown (below). |
   | Panda position | cm | 8 | −100 … 30 | Panda forward (+, toward you) or back (−, into the box) from the seam line. Saved in the profile (`scene.pandaForward`). |
   | Panda scale | % | 100 | 10 … 300 | Size of the panda relative to its automatic size (which follows the screen size). |
+  | Panda height | cm | 15 | −30 … 200 | Height of the panda's lowest point above the bottom edge of the screens (the lower panel when they are offset). Scaling keeps the feet in place. Saved in the profile (`scene.pandaLift`). |
+  | Panda turn | ° | 0 | −180 … 180 | Turns the panda about the vertical axis (+ turns it to its left, seen from above, counter-clockwise). Saved in the profile (`scene.pandaYaw`). |
+  | Panda tilt | ° | 0 | −90 … 90 | Tilts the panda about the left–right axis: + leans its top toward you, − away. Its lowest point stays at Panda height. Saved in the profile (`scene.pandaPitch`). |
 
   **Cut box (default, scene 2).** The two screens cut a virtual box from
   top to bottom, and you look into the part of the box that is left behind
@@ -236,7 +244,7 @@ for this.
 
   Only the sliders of the selected box are shown. The box choice
   (`boxScene`: `cut` / `open`), panda scale and all box values are stored in
-  the profile (`scene.pandaScale`, `scene.cutWidth`, `scene.cutHeight`,
+  the profile (`scene.pandaScale`, `scene.pandaLift`, `scene.pandaYaw`, `scene.pandaPitch`, `scene.cutWidth`, `scene.cutHeight`,
   `scene.cutDepth`, `scene.boxWidth`, `scene.boxHeight`, `scene.boxForward`),
   saved on **Apply** and included in Export / Import. Out-of-range or unknown
   values in an imported profile fall back to the defaults. The debug
@@ -264,7 +272,7 @@ Sections, top to bottom:
      Face Landmarker on the same crop. Needs internet to load its model; if
      it fails to load the status line says so and the previous detector is
      used.
-   - **depth-rgb (Orbbec Femto Bolt)**: fuses the colour and depth cameras
+   - **depth-rgb (Orbbec Femto Bolt, default)**: fuses the colour and depth cameras
      (algorithm from `sub-features/femto_bolt_charuco/iris_depth.py`).
      MediaPipe finds the irises in the colour image; the depth image is
      reprojected into the colour camera with the factory calibration and
@@ -274,7 +282,9 @@ Sections, top to bottom:
      length. The eye point is the midpoint of both irises.
      - Runs in a local helper, not the browser (the browser cannot read the
        depth camera): `bash tools/run_depth_rgb.sh` starts
-       `tools/depth_rgb_bridge.py` on `http://localhost:8766`. The helper
+       `tools/depth_rgb_bridge.py` on `http://localhost:8766`;
+       `tools/run_glass.sh` starts it with the app server (`DEPTH_RGB=0`
+       skips it). The helper
        owns the camera, so the browser does not open a webcam in this mode;
        the camera dropdown is ignored.
      - **No eye-distance calibration**: the distance is measured in mm. The
@@ -477,3 +487,122 @@ edges, the screen geometry is the problem.
 3. The calibration camera is a **second USB webcam** (no phone support).
 4. Later method: a **shared printed board** seen by both cameras. No marker
    is attached to the tracking camera.
+
+## 8. Glass room and screen ChArUco calibration
+
+This section supersedes the v2 placeholder calibration flow and initial scene
+choice above. Saved scene choices, dimensions and camera measurements are
+preserved. New profiles default to the supplied 33.5 × 60 cm active area.
+
+This extension adds **Glass room**, selected explicitly for saved profiles.
+A neutral wall, whiteboard, tray, desk and side walls
+extend behind the physical displays in world space. The model remains sharp
+in front of a frosted glass plane. Room depth, width, board height, frost and
+exposure are editable. Daylight and overhead white have separate saved colour
+and exposure matches. These are an approximate room until measured/captured;
+unseen room detail is an approximation. A built-in imagegen background derived
+from the Lenovo reference removes only the two central portrait monitors and
+their mounted tracking camera. The left landscape screen/laptop, right desktop
+tower, desk peripherals and connecting wires remain the visual anchors. The
+whiteboard is subdued background. Equipment is mapped closer than the wall,
+with depth changing as the viewer moves; these surrounding depths are estimates.
+The desk and side walls provide additional 3D geometry.
+
+**Measured room (glass illusion, default backdrop):** the panels should read
+as glass in front of the real room. The generated background is mapped onto
+measured proxies instead of one relief plane: the wall/whiteboard plane, the
+desk top, the Dell tower box and the left landscape monitor box with stand.
+Home shows **Wall behind seam (cm)** (default 26) and **Wall turn (°)**
+(default 7.4, range −30…30); the proxies stay fixed relative to the wall.
+Profiles saved before this change keep their other values but take the new
+wall distance once (the old 85 cm default described the estimated room).
+Wires and small desk items are not modelled; the desk is clean, with soft
+shading near the wall and under the tower. The photo surfaces are unlit and
+scaled by the lighting mode's Brightness and Wall tint, so **Match current
+lighting** also darkens or tints the room photo. Frost and the sharp model in
+front are unchanged. **Plain whiteboard room** keeps the procedural room.
+
+**Fixed-eye check:** `concave-room.html?eye=x,y,z` (cm from the seam, z > 0)
+holds the eye at that point, e.g. the Lenovo's solved position, so a camera
+aimed at the screens shows whether the room on the panels continues the real
+surroundings around their edges. Without the parameter, tracking is unchanged.
+The character's forward-position range extends to 200 cm; its saved position
+and existing tracking coordinate calculations are preserved. Home labels the
+control **Panda / model distance** so it is easy to find.
+
+**Left monitor depth reference:** an optional physical 7 × 5-square ChArUco
+board (35 mm squares, 28 mm markers, DICT_4X4_50, standard IDs starting at 0)
+can stay on the left landscape monitor. It is detected independently of the
+central display targets (whose IDs start at 100). With calibrated Lenovo
+intrinsics, its pose is transformed into the display coordinate system and
+shown as a left-monitor reference in the results. Copy/Apply saves it; the
+room uses the measured board-plane depth where representable. This measures
+the board plane, not the monitor's dimensions or the board-to-monitor offset.
+If the board is missing or unclear, screen calibration still works and the
+surrounding equipment keeps estimated depth. Calibration artwork is never
+included in the generated room image. A calibration-only target-brightness
+slider (20–100%, initially 25%) reduces screen glare without changing target
+size or the normal scene. Captures wait two seconds for exposure to settle.
+After measuring the installed camera pose, **Measure left monitor · camera
+fixed** can capture its paper board with screen targets hidden, avoiding the
+screen/paper exposure difference. The camera must stay in the measured position;
+repeat the installed-position capture if it moves. This extra capture reuses
+the saved lens and camera pose and does not change the central screen geometry.
+
+**Match surroundings** takes an unmirrored frame from the selected second
+camera and samples the outer border (excluding the central monitor area),
+using bright, low-saturation pixels to suggest neutral wall colour and
+brightness for the selected lighting mode. A capture preview and download
+allow inspection; camera auto-exposure is not a photometric measurement.
+Colour matches are saved with the profile. The optional clean-background
+image is mapped onto the whiteboard at a real depth, blurred with the room,
+and kept for this session. Use a frontal, monitor-free image: a perspective
+photo from the second camera cannot directly replace a head-tracked room.
+
+**Calibration flow** (local Python/OpenCV helper through the app server):
+
+1. Enter measured active screen width/height and native portrait pixel width/
+   height. Both panels must be equal sized, upright, with no relative roll.
+   Physical dimensions establish metric scale; the solver cannot infer size
+   from an image alone. Span the window, set seam split correctly and confirm
+   coverage. **Align both displays for calibration** hides browser bars first
+   and then asks X11 to extend fullscreen across the portrait pair. Confirm
+   the patterns fill exactly the active areas. Layout/resolution/aspect errors
+   prevent capture. Patterns have separate ChArUco IDs and a white margin.
+2. Select the second camera (exclude the tracking camera). Show targets across
+   the full screens with setup hidden. Space takes a capture, Escape restores
+   controls. Automatic capture leaves targets visible, accepts distinct views
+   and shows progress in the white margin; Escape stops it. Use eight or more distinct camera positions/tilts, both boards
+   visible and sharp. Display and camera resolution must stay constant.
+   Duplicate views and insufficient/non-spread corners are rejected. Reset
+   starts a fresh set. Screen geometry edits invalidate prior captures.
+3. Solve camera intrinsics from the planar boards over these views, solve
+   each display pose, and recover angle, seam gap and vertical offset in cm.
+   Reject poor reprojection, inconsistent relative poses, non-upright panels
+   and asymmetric depth offsets unsupported by the current renderer. Show
+   reprojection RMS, accepted views, result fields and the second camera pose
+   at the last capture, also drawn in green in the debug mini-view with
+   the solved screens. Return the second camera to its mount and take a final
+   installed-position capture using the solved lens. Copy/Apply persists the
+   lens, selected camera and installed pose. Later sessions can reuse this lens
+   with one fixed-camera capture if focus/zoom and resolution are unchanged.
+   No invented confidence percentages.
+4. Optional tracking-camera calibration: download the separate shared board
+   PNG, print at the stated physical size without scaling, hold it still where
+   both cameras see its front, with screen targets also visible to the second
+   camera. Capture eight diverse board poses. Solve tracking-camera intrinsics
+   and chain the shared-board poses into the same display coordinate system.
+   Browser video tracking must be active (depth-rgb shared capture unsupported).
+   If this step is skipped, retain manual tracking-camera pose and FOV.
+5. **Copy to Manual** explicitly copies supported solved values for review.
+   **Apply** saves them. Failed solves leave manual measurements intact.
+   Changes to camera, board, screen or viewport invalidate dependent results.
+   If the helper or hardware is absent, explain how to start/select it and
+   preserve manual setup. No camera uploads to external services.
+
+Synthetic solver tests cover metric geometry, camera poses, rejection and
+board generation. Physical accuracy still requires a real-camera validation.
+
+The Span controls select exactly two equal, adjacent portrait displays,
+aligned at the top in system display settings. Additional landscape displays
+are excluded. Unsupported display arrangements show a corrective message.

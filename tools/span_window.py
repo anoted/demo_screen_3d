@@ -11,6 +11,7 @@ Needs: python3-xlib (pip install python-xlib), Google Chrome, an X11 session.
 import os, subprocess, sys, tempfile, time
 from Xlib import X, display, protocol
 from Xlib.ext import xinerama
+from display_pair import select_pair
 
 URL = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8000/concave-room.html'
 APP_CLASS = 'localhost__concave-room.html'
@@ -19,16 +20,16 @@ PROFILE = os.path.join(tempfile.gettempdir(), 'concave-room-chrome')
 d = display.Display()
 root = d.screen().root
 screens = xinerama.query_screens(d).screens
-left = min(range(len(screens)), key=lambda i: screens[i].x)
-right = max(range(len(screens)), key=lambda i: screens[i].x + screens[i].width)
-width = sum(s.width for s in screens)
-height = max(s.height for s in screens)
+left, right = select_pair(screens)
+width = screens[left].width + screens[right].width
+height = screens[left].height
+x, y = screens[left].x, screens[left].y
 
 subprocess.Popen(['google-chrome', f'--user-data-dir={PROFILE}', '--no-first-run',
                   # Keep tracking running when the window is partly covered.
                   '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
                   '--disable-backgrounding-occluded-windows',
-                  f'--app={URL}', '--window-position=0,0', f'--window-size={width},{height}'],
+                  f'--app={URL}', f'--window-position={x},{y}', f'--window-size={width},{height}'],
                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def find(window):
